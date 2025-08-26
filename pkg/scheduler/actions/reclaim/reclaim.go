@@ -152,7 +152,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 				continue
 			}
 
-			klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.", task.Namespace, task.Name, n.Name)
+			klog.V(4).Infof("Considering Task <%s/%s> on Node <%s>.", task.Namespace, task.Name, n.Name)
 
 			var reclaimees []*api.TaskInfo
 			for _, task := range n.Tasks {
@@ -184,7 +184,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			victims := ssn.Reclaimable(task, reclaimees)
 
 			if err := util.ValidateVictims(task, n, victims); err != nil {
-				klog.V(3).Infof("No validated victims on Node <%s>: %v", n.Name, err)
+				klog.V(4).Infof("No validated victims on Node <%s>: %v", n.Name, err)
 				continue
 			}
 

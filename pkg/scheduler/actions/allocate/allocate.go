@@ -179,7 +179,7 @@ func (alloc *Action) allocateResources(queues *util.PriorityQueue, jobsMap map[a
 			continue
 		}
 
-		klog.V(3).Infof("Try to allocate resource to %d tasks of Job <%v/%v>",
+		klog.V(4).Infof("Try to allocate resource to %d tasks of Job <%v/%v>",
 			tasks.Len(), job.Namespace, job.Name)
 
 		hardMode, highestAllowedTier := job.IsHardTopologyMode()
