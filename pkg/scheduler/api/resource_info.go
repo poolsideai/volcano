@@ -416,6 +416,7 @@ func (r *Resource) LessEqual(rr *Resource, defaultValue DimensionDefaultValue) b
 	if defaultValue == Infinity {
 		for name := range rr.ScalarResources {
 			if _, ok := r.ScalarResources[name]; !ok {
+				klog.V(3).Infof("Scalar resource %s is not defined in r, r: %v, rr: %v", name.String(), r, rr)
 				return false
 			}
 		}
@@ -424,6 +425,7 @@ func (r *Resource) LessEqual(rr *Resource, defaultValue DimensionDefaultValue) b
 	for resourceName, leftValue := range r.ScalarResources {
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
+			klog.V(3).Infof("Scalar resource %s is not defined in rr, r: %v, rr: %v", resourceName.String(), r, rr)
 			continue
 		}
 

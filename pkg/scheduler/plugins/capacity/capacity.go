@@ -419,7 +419,7 @@ func (cp *capacityPlugin) buildQueueAttrs(ssn *framework.Session) {
 				attr.realCapability = realCapability
 			}
 			cp.queueOpts[job.Queue] = attr
-			klog.V(4).Infof("Added Queue <%s> attributes.", job.Queue)
+			klog.V(3).Infof("Added Queue <%s> attributes.", job.Queue)
 		}
 
 		attr := cp.queueOpts[job.Queue]
