@@ -141,7 +141,7 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 			allocated.Sub(reclaimee.Resreq)
 			victims = append(victims, reclaimee)
 		}
-		klog.V(4).Infof("Victims from capacity plugin, victims=%+v reclaimer=%s", victims, reclaimer)
+		klog.V(3).Infof("Victims from capacity plugin, victims=%+v reclaimer=%s", victims, reclaimer)
 		return victims, util.Permit
 	})
 

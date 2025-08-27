@@ -23,6 +23,7 @@ package framework
 import (
 	"context"
 
+	"k8s.io/klog/v2"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"volcano.sh/apis/pkg/apis/scheduling"
@@ -204,6 +205,7 @@ func (ssn *Session) Reclaimable(reclaimer *api.TaskInfo, reclaimees []*api.TaskI
 				victims = nil
 				break
 			}
+			klog.V(3).Infof("Victims from plugin %s, victims=%+v reclaimer=%s", plugin.Name, victims, reclaimer.Name)
 			// first iteration - initialize victims list
 			if victims == nil {
 				victims = candidates

@@ -103,8 +103,10 @@ func NewResource(rl v1.ResourceList) *Resource {
 				if !ignore {
 					r.AddScalar(rName, float64(rQuant.MilliValue()))
 				} else {
-					klog.V(4).Infof("Ignoring resource %s", rName.String())
+					klog.V(3).Infof("Ignoring resource %s", rName.String())
 				}
+			} else {
+				klog.V(3).Infof("non scalar resource %s", rName.String())
 			}
 		}
 	}
