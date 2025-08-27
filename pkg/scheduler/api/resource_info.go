@@ -105,8 +105,6 @@ func NewResource(rl v1.ResourceList) *Resource {
 				} else {
 					klog.V(3).Infof("Ignoring resource %s", rName.String())
 				}
-			} else {
-				klog.V(3).Infof("non scalar resource %s", rName.String())
 			}
 		}
 	}

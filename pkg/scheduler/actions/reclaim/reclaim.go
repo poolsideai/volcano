@@ -142,6 +142,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		}
 
 		assigned := false
+		reclaimed := api.EmptyResource()
 		// we should filter out those nodes that are UnschedulableAndUnresolvable status got in allocate action
 		totalNodes := ssn.FilterOutUnschedulableAndUnresolvableNodesForTask(task)
 		for _, n := range totalNodes {
@@ -191,7 +192,6 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			victimsQueue := ssn.BuildVictimsPriorityQueue(victims, task)
 
 			resreq := task.InitResreq.Clone()
-			reclaimed := api.EmptyResource()
 
 			// Reclaim victims for tasks.
 			for !victimsQueue.Empty() {
