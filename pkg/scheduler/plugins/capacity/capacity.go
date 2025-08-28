@@ -138,14 +138,11 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 			if allocated.LessEqual(attr.deserved, api.Infinity) || !attr.guarantee.LessEqual(exceptReclaimee, api.Zero) {
 				continue
 			}
+			klog.V(3).Infof("reclaimee %s(%+v) becomes victim after comparison. allocated=%+v, deserved=%+v, exceptReclaimee=%+v", reclaimee.Name, reclaimee.Resreq, allocated, attr.deserved, exceptReclaimee)
 			allocated.Sub(reclaimee.Resreq)
 			victims = append(victims, reclaimee)
 		}
-		victimNames := []string{}
-		for _, victim := range victims {
-			victimNames = append(victimNames, victim.Name)
-		}
-		klog.V(3).Infof("Victims from capacity plugin, victims=%+v reclaimer=%s", victimNames, reclaimer)
+
 		return victims, util.Permit
 	})
 

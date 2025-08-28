@@ -205,7 +205,11 @@ func (ssn *Session) Reclaimable(reclaimer *api.TaskInfo, reclaimees []*api.TaskI
 				victims = nil
 				break
 			}
-			klog.V(3).Infof("Victims from plugin %s, victims=%+v reclaimer=%s", plugin.Name, victims, reclaimer.Name)
+			victimNames := []string{}
+			for _, victim := range victims {
+				victimNames = append(victimNames, victim.Name)
+			}
+			klog.V(3).Infof("Victims from plugin %s, victims=%+v reclaimer=%s", plugin.Name, victimNames, reclaimer.Name)
 			// first iteration - initialize victims list
 			if victims == nil {
 				victims = candidates

@@ -319,7 +319,7 @@ func (pmpt *Action) normalPreempt(
 	assigned := false
 
 	for _, node := range selectedNodes {
-		klog.V(4).Infof("Considering Task <%s/%s> on Node <%s>.",
+		klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.",
 			preemptor.Namespace, preemptor.Name, node.Name)
 
 		var preemptees []*api.TaskInfo
@@ -334,7 +334,7 @@ func (pmpt *Action) normalPreempt(
 		metrics.UpdatePreemptionVictimsCount(len(victims))
 
 		if err := util.ValidateVictims(preemptor, node, victims); err != nil {
-			klog.V(4).Infof("No validated victims on Node <%s>: %v", node.Name, err)
+			klog.V(3).Infof("No validated victims on Node <%s>: %v", node.Name, err)
 			continue
 		}
 
@@ -373,7 +373,7 @@ func (pmpt *Action) normalPreempt(
 		}
 
 		metrics.RegisterPreemptionAttempts()
-		klog.V(4).Infof("Try to preempt <%v> for Task <%s/%s> requested <%v>.",
+		klog.V(3).Infof("Try to preempt <%v> for Task <%s/%s> requested <%v>.",
 			preempted, preemptor.Namespace, preemptor.Name, preemptor.InitResreq)
 
 		// If preemptor's queue is not allocatable, it means preemptor cannot be allocated. So no need care about the node idle resource
@@ -720,7 +720,7 @@ func SelectVictimsOnNode(
 	metrics.UpdatePreemptionVictimsCount(len(allVictims))
 
 	if err := util.ValidateVictims(preemptor, nodeInfo, allVictims); err != nil {
-		klog.V(4).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
+		klog.V(3).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
 		return nil, api.AsStatus(fmt.Errorf("no validated victims on Node <%s>: %v", nodeInfo.Name, err))
 	}
 

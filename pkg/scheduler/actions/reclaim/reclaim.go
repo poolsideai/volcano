@@ -152,7 +152,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 				continue
 			}
 
-			klog.V(4).Infof("Considering Task <%s/%s> on Node <%s>.", task.Namespace, task.Name, n.Name)
+			klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.", task.Namespace, task.Name, n.Name)
 
 			var reclaimees []*api.TaskInfo
 			for _, task := range n.Tasks {
@@ -177,7 +177,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			}
 
 			if len(reclaimees) == 0 {
-				klog.V(4).Infof("No reclaimees on Node <%s>.", n.Name)
+				klog.V(3).Infof("No reclaimees on Node <%s>.", n.Name)
 				continue
 			}
 
