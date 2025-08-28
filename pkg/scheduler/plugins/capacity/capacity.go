@@ -141,7 +141,11 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 			allocated.Sub(reclaimee.Resreq)
 			victims = append(victims, reclaimee)
 		}
-		klog.V(3).Infof("Victims from capacity plugin, victims=%+v reclaimer=%s", victims, reclaimer)
+		victimNames := []string{}
+		for _, victim := range victims {
+			victimNames = append(victimNames, victim.Name)
+		}
+		klog.V(3).Infof("Victims from capacity plugin, victims=%+v reclaimer=%s", victimNames, reclaimer)
 		return victims, util.Permit
 	})
 
@@ -419,7 +423,7 @@ func (cp *capacityPlugin) buildQueueAttrs(ssn *framework.Session) {
 				attr.realCapability = realCapability
 			}
 			cp.queueOpts[job.Queue] = attr
-			klog.V(3).Infof("Added Queue <%s> attributes.", job.Queue)
+			klog.V(3).Infof("Added Queue <%s> attributes <%v>.", job.Queue, attr)
 		}
 
 		attr := cp.queueOpts[job.Queue]
