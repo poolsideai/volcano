@@ -415,6 +415,9 @@ func (r *Resource) LessEqual(rr *Resource, defaultValue DimensionDefaultValue) b
 
 	if defaultValue == Infinity {
 		for name := range rr.ScalarResources {
+			if IgnoreScalarResource(name) {
+				continue
+			}
 			if _, ok := r.ScalarResources[name]; !ok {
 				klog.V(3).Infof("Scalar resource %s is not defined in r, r: %v, rr: %v", name.String(), r, rr)
 				return false
@@ -423,6 +426,9 @@ func (r *Resource) LessEqual(rr *Resource, defaultValue DimensionDefaultValue) b
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			klog.V(3).Infof("Scalar resource %s is not defined in rr, r: %v, rr: %v", resourceName.String(), r, rr)
@@ -463,7 +469,7 @@ func (r *Resource) LessEqualWithDimension(rr *Resource, req *Resource) bool {
 	}
 
 	for name, quant := range req.ScalarResources {
-		if IsIgnoredScalarResource(name) {
+		if IsIgnoredScalarResource(name) || IgnoreScalarResource(name) {
 			continue
 		}
 		rQuant := r.ScalarResources[name]
@@ -791,4 +797,8 @@ func ExceededPart(left, right *Resource) *Resource {
 
 	diff, _ := left.Diff(right, Zero)
 	return diff
+}
+
+func IgnoreScalarResource(name v1.ResourceName) bool {
+	return name == "attachable-volumes-csi-fsx.csi.aws.com" || name == "efa.poolsi.de/infiniband" || name == "vpc.amazonaws.com/efa" || ignoredScalarResources.Has(string(name))
 }
