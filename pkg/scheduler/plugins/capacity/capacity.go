@@ -138,7 +138,7 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 			if allocated.LessEqual(attr.deserved, api.Infinity) || !attr.guarantee.LessEqual(exceptReclaimee, api.Zero) {
 				continue
 			}
-			klog.V(3).Infof("reclaimee %s(%+v) becomes victim after comparison. allocated=%+v, deserved=%+v, exceptReclaimee=%+v", reclaimee.Name, reclaimee.Resreq, allocated, attr.deserved, exceptReclaimee)
+			klog.V(3).Infof("reclaimee %s/%s(%+v) becomes victim after comparison. allocated=%+v, deserved=%+v, exceptReclaimee=%+v", job.Queue, reclaimee.Name, reclaimee.Resreq, allocated, attr.deserved, exceptReclaimee)
 			allocated.Sub(reclaimee.Resreq)
 			victims = append(victims, reclaimee)
 		}
