@@ -92,3 +92,13 @@ func (q *QueueInfo) Reclaimable() bool {
 
 	return *q.Queue.Spec.Reclaimable
 }
+
+func (q *QueueInfo) GetAllocatedGPU() int64 {
+	quantity := q.Queue.Status.Allocated["nvidia.com/gpu"]
+	return quantity.MilliValue()
+}
+
+func (q *QueueInfo) GetDeservedGPU() int64 {
+	quantity := q.Queue.Spec.Deserved["nvidia.com/gpu"]
+	return quantity.MilliValue()
+}
