@@ -802,3 +802,7 @@ func ExceededPart(left, right *Resource) *Resource {
 	diff, _ := left.Diff(right, Zero)
 	return diff
 }
+
+func IgnoreScalarResource(name v1.ResourceName) bool {
+	return name == "attachable-volumes-csi-fsx.csi.aws.com" || name == "efa.poolsi.de/infiniband" || name == "vpc.amazonaws.com/efa" || ignoredScalarResources.Has(string(name))
+}
