@@ -1,4 +1,4 @@
-*
+/*
 Copyright 2018 The Kubernetes Authors.
 Copyright 2018-2025 The Volcano Authors.
 
