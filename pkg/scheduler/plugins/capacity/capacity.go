@@ -58,6 +58,7 @@ type queueAttr struct {
 	queueID   api.QueueID
 	name      string
 	share     float64
+	priority  int32
 	ancestors []api.QueueID
 	children  map[api.QueueID]*queueAttr
 
@@ -152,19 +153,19 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 		}
 
 		queue := obj.(*api.QueueInfo)
-		task := candidate.(*api.TaskInfo)
+		job := candidate.(*api.JobInfo)
 		if queue.Queue.Status.State != scheduling.QueueStateOpen {
-			klog.V(3).Infof("Queue <%s> current state: %s, is not open state, can not reclaim for <%s>.", queue.Name, queue.Queue.Status.State, task.Name)
+			klog.V(3).Infof("Queue <%s> current state: %s, is not open state, can not reclaim for <%s>.", queue.Name, queue.Queue.Status.State, job.Name)
 			return false
 		}
 		attr := cp.queueOpts[queue.UID]
 
-		futureUsed := attr.allocated.Clone().Add(task.Resreq)
-		overused := !futureUsed.LessEqualWithDimension(attr.deserved, task.Resreq)
+		futureUsed := attr.allocated.Clone().Add(job.TotalRequest)
+		overused := !futureUsed.LessEqualWithDimension(attr.deserved, job.TotalRequest)
 		metrics.UpdateQueueOverused(attr.name, overused)
 		if overused {
 			klog.V(3).Infof("Queue <%v> can not reclaim, deserved <%v>, allocated <%v>, share <%v>, requested <%v>",
-				queue.Name, attr.deserved, attr.allocated, attr.share, task.Resreq)
+				queue.Name, attr.deserved, attr.allocated, attr.share, job.TotalRequest)
 		}
 
 		// PreemptiveFn is the opposite of OverusedFn in proportion plugin cause as long as there is a one-dimensional
@@ -365,12 +366,96 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 				event.Task.Namespace, event.Task.Name, event.Task.Resreq, attr.share)
 		},
 	})
+
+	ssn.PreempteeJobOrderFn = cp.preempteeJobOrder
+	ssn.PreemptorJobOrderFn = cp.preemptorJobOrder
 }
 
 func (cp *capacityPlugin) OnSessionClose(ssn *framework.Session) {
 	cp.totalResource = nil
 	cp.totalGuarantee = nil
 	cp.queueOpts = nil
+}
+
+func (cp *capacityPlugin) preempteeJobOrder(l, r interface{}) bool {
+	lJob := l.(*api.JobInfo)
+	rJob := r.(*api.JobInfo)
+
+	lvElasticReplicas := getElasticReplicas(lJob)
+	rvElasticReplicas := getElasticReplicas(rJob)
+
+	if lvElasticReplicas != rvElasticReplicas {
+		// this will be used as a LessThan function in building up the heap,
+		// so we need to return the opposite of the comparison to prioritize the job with more elastic replicas
+		return lvElasticReplicas > rvElasticReplicas
+	}
+
+	// when jobs have the same elastic replicas, we compare the queue priorities
+	lQueue := cp.queueOpts[lJob.Queue]
+	rQueue := cp.queueOpts[rJob.Queue]
+
+	if lQueue.priority != rQueue.priority {
+		return lQueue.priority < rQueue.priority
+	}
+
+	// when jobs have the same elastic replicas and queue priorities, we compare the queue overusage
+	lvOverusage := getQueueOverusage(lQueue)
+	rvOverusage := getQueueOverusage(rQueue)
+	if lvOverusage != rvOverusage {
+		// we want to prioritize the queue with more overusage
+		return lvOverusage > rvOverusage
+	}
+
+	// we compare the priorities of the jobs
+	if lJob.Priority != rJob.Priority {
+		return lJob.Priority < rJob.Priority
+	}
+
+	// compare the number of tasks in a job, and we prioritize the job with fewer tasks
+	lTasks := len(lJob.Tasks)
+	rTasks := len(rJob.Tasks)
+	if lTasks != rTasks {
+		return lTasks < rTasks
+	}
+
+	// lastly we compare the job creation timestamp
+	return lJob.CreationTimestamp.Before(&rJob.CreationTimestamp)
+}
+
+func getQueueOverusage(queue *queueAttr) float64 {
+	allocatedGPUs := queue.allocated.Get("nvidia.com/gpu")
+	deservedGPUs := queue.deserved.Get("nvidia.com/gpu")
+	overusage := float64(allocatedGPUs-deservedGPUs) / float64(deservedGPUs)
+	if overusage < 0 {
+		return 0
+	}
+	return overusage
+}
+
+func getElasticReplicas(job *api.JobInfo) int {
+	elasticReplicas := len(job.Tasks) - int(job.TaskMinAvailableTotal)
+	if elasticReplicas < 0 {
+		return 0
+	}
+	return elasticReplicas
+}
+
+func (cp *capacityPlugin) preemptorJobOrder(l, r interface{}) bool {
+	lJob := l.(*api.JobInfo)
+	rJob := r.(*api.JobInfo)
+
+	lQueue := cp.queueOpts[lJob.Queue]
+	rQueue := cp.queueOpts[rJob.Queue]
+
+	if lQueue.priority != rQueue.priority {
+		return lQueue.priority > rQueue.priority
+	}
+
+	if lJob.Priority != rJob.Priority {
+		return lJob.Priority > rJob.Priority
+	}
+
+	return lJob.CreationTimestamp.Before(&rJob.CreationTimestamp)
 }
 
 func (cp *capacityPlugin) buildQueueAttrs(ssn *framework.Session) {
@@ -388,8 +473,9 @@ func (cp *capacityPlugin) buildQueueAttrs(ssn *framework.Session) {
 		if _, found := cp.queueOpts[job.Queue]; !found {
 			queue := ssn.Queues[job.Queue]
 			attr := &queueAttr{
-				queueID: queue.UID,
-				name:    queue.Name,
+				queueID:  queue.UID,
+				name:     queue.Name,
+				priority: queue.Queue.Spec.Priority,
 
 				deserved:  api.NewResource(queue.Queue.Spec.Deserved),
 				allocated: api.EmptyResource(),

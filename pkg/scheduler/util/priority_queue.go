@@ -91,7 +91,6 @@ func (pq *priorityQueue) Less(i, j int) bool {
 		return i < j
 	}
 
-	// We want Pop to give us the highest, not lowest, priority so we use greater than here.
 	return pq.lessFn(pq.items[i], pq.items[j])
 }
 

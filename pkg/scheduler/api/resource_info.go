@@ -494,6 +494,9 @@ func (r *Resource) LessEqualWithResourcesName(rr *Resource, defaultValue Dimensi
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			continue
@@ -530,6 +533,9 @@ func (r *Resource) LessPartly(rr *Resource, defaultValue DimensionDefaultValue) 
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			return true
@@ -566,6 +572,9 @@ func (r *Resource) LessEqualPartly(rr *Resource, defaultValue DimensionDefaultVa
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			return true
@@ -591,6 +600,9 @@ func (r *Resource) Equal(rr *Resource, defaultValue DimensionDefaultValue) bool 
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue := rr.ScalarResources[resourceName]
 		if !equalFunc(leftValue, rightValue, minResource) {
 			return false
