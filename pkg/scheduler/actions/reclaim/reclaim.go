@@ -84,8 +84,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 
 		reclaimedEnough, reclaimedGPU, pendingJobTopology, jobsToRequeue := getReclaimedResources(ssn, pendingJob, runningJobs)
 		if !reclaimedEnough {
-			klog.V(3).Infof(`Job <%s/%s> Queue <%s> can not reclaim resources due to not enough resources. 
-			Reclaimed GPU: <%d>, requested resources: <%d>`,
+			klog.V(3).Infof(`Job <%s/%s> Queue <%s> can not reclaim resources due to not enough resources. Reclaimed GPU: <%d>, requested GPUs: <%d>`,
 				pendingJob.Namespace, pendingJob.Name, pendingJob.Queue, reclaimedGPU, pendingJob.GetTotalRequestGPU())
 
 			// push back the jobs that would not be reclaimed
@@ -96,14 +95,16 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		}
 
 		for _, task := range pendingJobTopology {
-			err := ssn.Evict(task.Task, "reclaim for job "+pendingJob.Name)
-			if err != nil {
-				klog.Errorf("Failed to evict task <%s/%s> for job <%s/%s>: %v",
-					task.Task.Namespace, task.Task.Name, pendingJob.Namespace, pendingJob.Name, err)
+			for _, t := range task.TasksToEvict {
+				err := ssn.Evict(t, "reclaim for job "+pendingJob.Name)
+				if err != nil {
+					klog.Errorf("Failed to evict task <%s/%s> for job <%s/%s>: %v",
+						t.Namespace, t.Name, pendingJob.Namespace, pendingJob.Name, err)
+				}
 			}
 			// we still try to pipeline the task even if it fails to evict
 			// because it might be a victim of a gang job
-			if err := ssn.Pipeline(task.Task, task.NodeName); err != nil {
+			if err := ssn.Pipeline(task.PendingTask, task.NodeName); err != nil {
 				klog.Errorf("Failed to pipeline job <%s/%s>: %v", pendingJob.Namespace, pendingJob.Name, err)
 			}
 		}
@@ -123,23 +124,21 @@ func jobPolicyAllowPeemption(job *api.JobInfo) bool {
 	return true
 }
 
-type VictimTask struct {
-	NodeName string
-	GPU      int64
-	Task     *api.TaskInfo
-}
-
-func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runningJobs *util.PriorityQueue) (bool, int64, map[string]*VictimTask, []*api.JobInfo) {
+func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runningJobs *util.PriorityQueue) (bool, int64, map[string]*EvictTask, []*api.JobInfo) {
 	reclaimedGPU := int64(0)
 	reclaimedEnough := false
 	finalVictims := []*api.JobInfo{}
 	skippedVictims := []*api.JobInfo{}
-	pendingJobTopology := map[string]*VictimTask{}
+	pendingJobTopology := map[string]*EvictTask{}
 	for {
 		if reclaimedEnough || runningJobs.Empty() {
 			break
 		}
 		jobToEvict := runningJobs.Pop().(*api.JobInfo)
+		if jobToEvict.Queue == pendingJob.Queue {
+			skippedVictims = append(skippedVictims, jobToEvict)
+			continue
+		}
 		// first we check if it violates the budget when the victimJob is reclaimed
 		if !noBudgetViolationAfterReclaim(ssn, jobToEvict, pendingJob) {
 			skippedVictims = append(skippedVictims, jobToEvict)
@@ -190,12 +189,19 @@ func noBudgetViolationAfterReclaim(ssn *framework.Session, victimJob, pendingJob
 	return false
 }
 
-func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) map[string]*VictimTask {
+type EvictTask struct {
+	NodeName     string
+	GPU          int64
+	TasksToEvict []*api.TaskInfo
+	PendingTask  *api.TaskInfo
+}
+
+func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) map[string]*EvictTask {
 	// topology maps have "required number of GPUs" -> "node names"
 	// {1: ["node1", "node2"]} means the nodes
 	// using the VictimTask struct instead of a single node name string because we need to carry the task information
 	// and the idle gpu count on that node for the calculation below
-	victimTopology := map[int64][]*VictimTask{}
+	victimNodes := map[string]*EvictTask{}
 	for _, task := range victimJob.Tasks {
 		node := ssn.Nodes[task.NodeName]
 		if node == nil {
@@ -204,44 +210,51 @@ func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.J
 		// we need to consider future idle in case the node wasn't fully occupied by the victim task
 		nodeFutureIdleGPU := node.FutureIdle().ScalarResources["nvidia.com/gpu"]
 		numGPU := int64(task.Resreq.ScalarResources["nvidia.com/gpu"] + nodeFutureIdleGPU)
-		victimTopology[numGPU] = append(victimTopology[numGPU], &VictimTask{
-			NodeName: task.NodeName,
-			GPU:      numGPU,
-			Task:     task,
-		})
+		tasks, ok := victimNodes[task.NodeName]
+		if !ok {
+			victimNodes[task.NodeName] = &EvictTask{
+				NodeName:     task.NodeName,
+				GPU:          numGPU,
+				TasksToEvict: []*api.TaskInfo{task},
+			}
+		} else {
+			victimNodes[task.NodeName] = &EvictTask{
+				NodeName:     task.NodeName,
+				GPU:          tasks.GPU + numGPU,
+				TasksToEvict: append(tasks.TasksToEvict, task),
+			}
+		}
 	}
 	// record task name -> node name so we know how to pipeline the tasks later
-	pendingJobTopology := map[string]*VictimTask{}
+	pendingJobTopology := map[string]*EvictTask{}
 	for _, task := range pendingJob.Tasks {
 		requiredGPU := int64(task.Resreq.ScalarResources["nvidia.com/gpu"])
-		taskAssigned := false
-		for i := requiredGPU; i <= 8; i++ {
-			nodes, ok := victimTopology[i]
-			if !ok || len(nodes) == 0 {
+		for _, node := range victimNodes {
+			if node.GPU < requiredGPU {
 				continue
 			}
-			for idx, node := range nodes {
-				if node.GPU < requiredGPU {
-					continue
-				}
-				node.GPU -= requiredGPU
-				if node.GPU == 0 {
-					// remove the node
-					victimTopology[i] = deleteFromSlice(victimTopology[i], idx)
-				}
-				pendingJobTopology[task.Name] = node
-				taskAssigned = true
-				break
+			result := &EvictTask{
+				NodeName:    node.NodeName,
+				PendingTask: task,
 			}
-			if taskAssigned {
-				break
+			for idx, t := range node.TasksToEvict {
+				requiredGPU -= int64(t.Resreq.ScalarResources["nvidia.com/gpu"])
+				result.TasksToEvict = append(result.TasksToEvict, t)
+				result.GPU += int64(t.Resreq.ScalarResources["nvidia.com/gpu"])
+				node.GPU -= int64(t.Resreq.ScalarResources["nvidia.com/gpu"])
+				node.TasksToEvict = deleteFromSlice(node.TasksToEvict, idx)
+				if requiredGPU == 0 {
+					break
+				}
 			}
+			pendingJobTopology[task.Name] = result
+			break
 		}
 	}
 	return pendingJobTopology
 }
 
-func deleteFromSlice(slice []*VictimTask, index int) []*VictimTask {
+func deleteFromSlice[T any](slice []T, index int) []T {
 	if index < 0 || index >= len(slice) {
 		return slice
 	}
