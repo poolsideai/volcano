@@ -1089,8 +1089,8 @@ func (j *JobInfo) GetAllocatedGPU() int64 {
 }
 
 func (j *JobInfo) GetElasticGPUs() int64 {
-	elasticReplicas := len(j.Tasks) - int(j.TaskMinAvailableTotal)
-	if elasticReplicas < 0 {
+	elasticReplicas := len(j.Tasks) - int(j.MinAvailable)
+	if elasticReplicas <= 0 {
 		return 0
 	}
 	gpuPerTask := int64(0)

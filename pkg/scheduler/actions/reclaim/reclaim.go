@@ -174,7 +174,7 @@ func noBudgetViolationAfterReclaim(ssn *framework.Session, victimJob, pendingJob
 	queueDeservedGPUs := ssn.Queues[victimJob.Queue].GetDeservedGPU()
 
 	withoutVictimJob := int64(0)
-	if len(victimJob.Tasks) == int(victimJob.TaskMinAvailableTotal) {
+	if len(victimJob.Tasks) == int(victimJob.MinAvailable) {
 		// when it's not an elastic workload, we check the total request of the job
 		withoutVictimJob = queueAllocatedGPUs - victimJob.GetTotalRequestGPU()
 	} else {
