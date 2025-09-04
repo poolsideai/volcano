@@ -238,6 +238,11 @@ func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.J
 			result := &EvictTask{
 				NodeName:    node.NodeName,
 				PendingTask: task,
+				GPU:         requiredGPU,
+			}
+			if len(node.TasksToEvict) == 0 {
+				node.GPU -= requiredGPU
+				break
 			}
 			for idx, t := range node.TasksToEvict {
 				requiredGPU -= int64(t.Resreq.ScalarResources["nvidia.com/gpu"])
