@@ -82,7 +82,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			continue
 		}
 
-		reclaimedEnough, reclaimedGPU, pendingJobTopology, jobsToRequeue := getReclaimedResources(ssn, pendingJob, runningJobs)
+		reclaimedEnough, reclaimedGPU, pendingJobTopology, jobsToRequeue := getReclaimedResources(ssn, pendingJob.Clone(), runningJobs)
 		if !reclaimedEnough {
 			klog.V(3).Infof(`Job <%s/%s> Queue <%s> can not reclaim resources due to not enough resources. Reclaimed GPU: <%d>, requested GPUs: <%d>`,
 				pendingJob.Namespace, pendingJob.Name, pendingJob.Queue, reclaimedGPU, pendingJob.GetTotalRequestGPU())
@@ -129,7 +129,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 	reclaimedEnough := false
 	finalVictims := []*api.JobInfo{}
 	skippedVictims := []*api.JobInfo{}
-	pendingJobTopology := map[string]*EvictTask{}
+	finalPendingJobTopology := map[string]*EvictTask{}
 	for {
 		if reclaimedEnough || runningJobs.Empty() {
 			break
@@ -145,16 +145,18 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 			continue
 		}
 		// then we need to check if the node can accommodate the task
-		pendingJobTopology = findNodesForPendingJob(ssn, jobToEvict, pendingJob)
+		pendingJobTopology := findNodesForPendingJob(ssn, jobToEvict, pendingJob)
 		if len(pendingJobTopology) == 0 {
 			skippedVictims = append(skippedVictims, jobToEvict)
 			continue
 		}
 
-		finalVictims = append(finalVictims, jobToEvict)
 		for _, n := range pendingJobTopology {
+			finalPendingJobTopology[n.PendingTask.Name] = n
 			reclaimedGPU += n.GPU
 		}
+
+		finalVictims = append(finalVictims, jobToEvict)
 		if reclaimedGPU >= pendingJob.GetTotalRequestGPU() {
 			reclaimedEnough = true
 			break
@@ -166,7 +168,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		// we need to include the final victims because we didn't reclaim enough so they won't be evicted
 		jobsToRequeue = append(jobsToRequeue, finalVictims...)
 	}
-	return reclaimedEnough, reclaimedGPU, pendingJobTopology, jobsToRequeue
+	return reclaimedEnough, reclaimedGPU, finalPendingJobTopology, jobsToRequeue
 }
 
 func noBudgetViolationAfterReclaim(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) bool {
@@ -248,6 +250,7 @@ func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.J
 				}
 			}
 			pendingJobTopology[task.Name] = result
+			delete(pendingJob.Tasks, task.UID)
 			break
 		}
 	}
