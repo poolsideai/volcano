@@ -139,8 +139,10 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 			skippedVictims = append(skippedVictims, jobToEvict)
 			continue
 		}
-		// first we check if it violates the budget when the victimJob is reclaimed
-		if !noBudgetViolationAfterReclaim(ssn, jobToEvict, pendingJob) {
+		klog.V(3).Infof("Checking if job <%s/%s> can be evicted", jobToEvict.Namespace, jobToEvict.Name)
+		// first we check if the queue is overused
+		if !isQueueOverused(ssn, jobToEvict) {
+			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Namespace, jobToEvict.Name)
 			skippedVictims = append(skippedVictims, jobToEvict)
 			continue
 		}
@@ -169,6 +171,12 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		jobsToRequeue = append(jobsToRequeue, finalVictims...)
 	}
 	return reclaimedEnough, reclaimedGPU, finalPendingJobTopology, jobsToRequeue
+}
+
+func isQueueOverused(ssn *framework.Session, victimJob *api.JobInfo) bool {
+	queueAllocatedGPUs := ssn.Queues[victimJob.Queue].GetAllocatedGPU()
+	queueDeservedGPUs := ssn.Queues[victimJob.Queue].GetDeservedGPU()
+	return queueAllocatedGPUs > queueDeservedGPUs
 }
 
 func noBudgetViolationAfterReclaim(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) bool {
