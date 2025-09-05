@@ -73,24 +73,24 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		// it uses the PreemptiveFn of the capacity plugin to check if the queue can reclaim.
 		// A queue can not reclaim when allocated + job.TotalRequest > deserved.
 		if !ssn.Preemptive(ssn.Queues[pendingJob.Queue], pendingJob) {
-			klog.V(3).Infof("Job <%s/%s> Queue <%s> can not reclaim resources due to overusage", pendingJob.Namespace, pendingJob.Name, pendingJob.Queue)
+			klog.V(3).Infof("Job <%s/%s> can not reclaim resources due to overusage", pendingJob.Queue, pendingJob.Name)
 			continue
 		}
 
 		if !jobPolicyAllowPeemption(pendingJob) {
-			klog.V(3).Infof("Job <%s/%s> Queue <%s> can not reclaim resources due to preemption policy", pendingJob.Namespace, pendingJob.Name, pendingJob.Queue)
+			klog.V(3).Infof("Job <%s/%s> can not reclaim resources due to preemption policy", pendingJob.Queue, pendingJob.Name)
 			continue
 		}
 
 		reclaimedEnough, reclaimedGPU, pendingJobTopology, jobsToRequeue := getReclaimedResources(ssn, pendingJob.Clone(), runningJobs)
+		// push back the jobs that would not be reclaimed
+		for _, victim := range jobsToRequeue {
+			runningJobs.Push(victim)
+		}
 		if !reclaimedEnough {
-			klog.V(3).Infof(`Job <%s/%s> Queue <%s> can not reclaim resources due to not enough resources. Reclaimed GPU: <%d>, requested GPUs: <%d>`,
-				pendingJob.Namespace, pendingJob.Name, pendingJob.Queue, reclaimedGPU, pendingJob.GetTotalRequestGPU())
+			klog.V(3).Infof(`Job <%s/%s> can not reclaim resources due to not enough resources. Reclaimed GPU: <%d>, requested GPUs: <%d>`,
+				pendingJob.Queue, pendingJob.Name, reclaimedGPU, pendingJob.GetTotalRequestGPU())
 
-			// push back the jobs that would not be reclaimed
-			for _, victim := range jobsToRequeue {
-				runningJobs.Push(victim)
-			}
 			continue
 		}
 
@@ -139,10 +139,10 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 			skippedVictims = append(skippedVictims, jobToEvict)
 			continue
 		}
-		klog.V(3).Infof("Checking if job <%s/%s> can be evicted", jobToEvict.Namespace, jobToEvict.Name)
+		klog.V(3).Infof("Checking if job <%s/%s> can be evicted", jobToEvict.Queue, jobToEvict.Name)
 		// first we check if the queue is overused
 		if !isQueueOverused(ssn, jobToEvict) {
-			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Namespace, jobToEvict.Name)
+			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Queue, jobToEvict.Name)
 			skippedVictims = append(skippedVictims, jobToEvict)
 			continue
 		}
@@ -246,10 +246,13 @@ func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.J
 			result := &EvictTask{
 				NodeName:    node.NodeName,
 				PendingTask: task,
-				GPU:         requiredGPU,
+				GPU:         int64(0),
 			}
 			if len(node.TasksToEvict) == 0 {
 				node.GPU -= requiredGPU
+				result.GPU = requiredGPU
+				pendingJobTopology[task.Name] = result
+				delete(pendingJob.Tasks, task.UID)
 				break
 			}
 			for idx, t := range node.TasksToEvict {
