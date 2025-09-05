@@ -356,6 +356,8 @@ func preemptorJobOrder(ssn *framework.Session) func(l, r interface{}) bool {
 			return lJob.Priority > rJob.Priority
 		}
 
-		return lJob.CreationTimestamp.Before(&rJob.CreationTimestamp)
+		// we need to prioritize the job that gets created later
+		// otherwise the new job will just keep evicting jobs but don't get the resource
+		return rJob.CreationTimestamp.Before(&lJob.CreationTimestamp)
 	}
 }
