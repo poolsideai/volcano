@@ -906,9 +906,9 @@ func (sc *SchedulerCache) Bind(ctx context.Context, bindContexts []*BindContext)
 	tmp := time.Now()
 	errMsg := sc.Binder.Bind(sc.kubeClient, readyToBindTasks)
 	if len(errMsg) == 0 {
-		klog.V(3).Infof("bind ok, latency %v", time.Since(tmp))
+		klog.V(4).Infof("bind ok, latency %v", time.Since(tmp))
 	} else {
-		klog.V(3).Infof("There are %d tasks in total and %d binds failed, latency %v", len(readyToBindTasks), len(errMsg), time.Since(tmp))
+		klog.V(4).Infof("There are %d tasks in total and %d binds failed, latency %v", len(readyToBindTasks), len(errMsg), time.Since(tmp))
 	}
 
 	for _, bindContext := range bindContexts {
