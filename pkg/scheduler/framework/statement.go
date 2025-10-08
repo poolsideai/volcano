@@ -179,7 +179,7 @@ func (s *Statement) Pipeline(task *api.TaskInfo, hostname string, evictionOccurr
 				task.Namespace, task.Name, hostname, s.ssn.UID, err)
 			errInfos = append(errInfos, err)
 		}
-		klog.V(3).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+		klog.V(4).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
 			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
 	} else {
 		err := fmt.Errorf("Failed to find Node <%s> in Session <%s> index when pipeline.",
@@ -234,7 +234,7 @@ func (s *Statement) UnPipeline(task *api.TaskInfo) error {
 			klog.Errorf("Failed to remove task <%v/%v> to node <%v> when unpipeline in Session <%v>: %v",
 				task.Namespace, task.Name, task.NodeName, s.ssn.UID, err)
 		}
-		klog.V(3).Infof("After unpipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+		klog.V(4).Infof("After unpipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
 			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
 	} else {
 		klog.Errorf("Failed to find Node <%s> in Session <%s> index when unpipeline.",
@@ -390,7 +390,7 @@ func (s *Statement) unallocate(task *api.TaskInfo) error {
 
 // Discard operation for evict, pipeline and allocate
 func (s *Statement) Discard() {
-	klog.V(3).Info("Discarding operations ...")
+	klog.V(4).Info("Discarding operations ...")
 	for i := len(s.operations) - 1; i >= 0; i-- {
 		op := s.operations[i]
 		op.task.GenerateLastTxContext()
@@ -416,7 +416,7 @@ func (s *Statement) Discard() {
 
 // Commit operation for evict and pipeline
 func (s *Statement) Commit() {
-	klog.V(3).Info("Committing operations ...")
+	klog.V(4).Info("Committing operations ...")
 	for _, op := range s.operations {
 		op.task.ClearLastTxContext()
 		switch op.name {

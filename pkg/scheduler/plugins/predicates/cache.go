@@ -71,7 +71,7 @@ func (pc *predicateCache) PredicateWithCache(nodeName string, pod *v1.Pod) (bool
 func (pc *predicateCache) UpdateCache(nodeName string, pod *v1.Pod, fit bool) {
 	podTemplateUID := getPodTemplateUID(pod)
 	if podTemplateUID == "" {
-		klog.V(3).Infof("Don't find pod %s template uid", pod.Name)
+		klog.V(4).Infof("Don't find pod %s template uid", pod.Name)
 		return
 	}
 

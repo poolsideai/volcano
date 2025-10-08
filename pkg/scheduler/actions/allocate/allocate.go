@@ -78,7 +78,7 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 
 	alloc.session = ssn
 	alloc.pickUpQueuesAndJobs(queues, jobsMap)
-	klog.V(3).Infof("Try to allocate resource to %d Queues", len(jobsMap))
+	klog.V(4).Infof("Try to allocate resource to %d Queues", len(jobsMap))
 	alloc.allocateResources(queues, jobsMap)
 }
 
@@ -363,7 +363,7 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 	for !tasks.Empty() {
 		task := tasks.Pop().(*api.TaskInfo)
 		if !ssn.Allocatable(queue, task) {
-			klog.V(3).Infof("Queue <%s> is overused when considering task <%s>, ignore it.", queue.Name, task.Name)
+			klog.V(4).Infof("Queue <%s> is overused when considering task <%s>, ignore it.", queue.Name, task.Name)
 			continue
 		}
 
@@ -373,7 +373,7 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 			continue
 		}
 
-		klog.V(3).Infof("There are <%d> nodes for Job <%v/%v>", len(ssn.Nodes), job.Namespace, job.Name)
+		klog.V(4).Infof("There are <%d> nodes for Job <%v/%v>", len(ssn.Nodes), job.Namespace, job.Name)
 
 		if err := ssn.PrePredicateFn(task); err != nil {
 			klog.V(3).Infof("PrePredicate for task %s/%s failed for: %v", task.Namespace, task.Name, err)
@@ -563,7 +563,7 @@ func (alloc *Action) allocateResourcesForTask(stmt *framework.Statement, task *a
 		return
 	}
 
-	klog.V(3).Infof("Predicates failed in allocate for task <%s/%s> on node <%s> with limited resources",
+	klog.V(4).Infof("Predicates failed in allocate for task <%s/%s> on node <%s> with limited resources",
 		task.Namespace, task.Name, node.Name)
 
 	// Allocate releasing resource to the task if any.

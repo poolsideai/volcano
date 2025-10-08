@@ -319,7 +319,7 @@ func (pmpt *Action) normalPreempt(
 	assigned := false
 
 	for _, node := range selectedNodes {
-		klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.",
+		klog.V(4).Infof("Considering Task <%s/%s> on Node <%s>.",
 			preemptor.Namespace, preemptor.Name, node.Name)
 
 		var preemptees []*api.TaskInfo
@@ -334,7 +334,7 @@ func (pmpt *Action) normalPreempt(
 		metrics.UpdatePreemptionVictimsCount(len(victims))
 
 		if err := util.ValidateVictims(preemptor, node, victims); err != nil {
-			klog.V(3).Infof("No validated victims on Node <%s>: %v", node.Name, err)
+			klog.V(4).Infof("No validated victims on Node <%s>: %v", node.Name, err)
 			continue
 		}
 
@@ -357,9 +357,13 @@ func (pmpt *Action) normalPreempt(
 				break
 			}
 			preemptee := victimsQueue.Pop().(*api.TaskInfo)
-			klog.V(3).Infof("Try to preempt Task <%s/%s> for Task <%s/%s>",
-				preemptee.Namespace, preemptee.Name, preemptor.Namespace, preemptor.Name)
-			if err := stmt.Evict(preemptee, "preempt"); err != nil {
+			preempteeQueue := preemptee.Namespace
+			preempteeJob := ssn.Jobs[preemptee.Job]
+			if preempteeJob != nil && preempteeJob.Queue != "" {
+				preempteeQueue = string(preempteeJob.Queue)
+			}
+			klog.V(3).Infof("Try to preempt Task <%s/%s> for Task <%s/%s>", preempteeQueue, preemptee.Name, currentQueue.Name, preemptor.Name)
+			if err := stmt.Evict(preemptee, "preempt "); err != nil {
 				klog.Errorf("Failed to preempt Task <%s/%s> for Task <%s/%s>: %v",
 					preemptee.Namespace, preemptee.Name, preemptor.Namespace, preemptor.Name, err)
 				continue
@@ -411,7 +415,7 @@ func (pmpt *Action) taskEligibleToPreempt(preemptor *api.TaskInfo) error {
 
 		err := pmpt.ssn.PredicateFn(preemptor, nodeInfo)
 		if err == nil {
-			return fmt.Errorf("not eligible due to the pod's nominated node is already schedulable, which should not happen as preemption means no node is schedulable")
+			return fmt.Errorf("not eligible due to the pod's nominated node is already schedulable, which should not happen as preemption means no node is schedulable. %v", err)
 		}
 
 		fitError, ok := err.(*api.FitError)
@@ -720,7 +724,7 @@ func SelectVictimsOnNode(
 	metrics.UpdatePreemptionVictimsCount(len(allVictims))
 
 	if err := util.ValidateVictims(preemptor, nodeInfo, allVictims); err != nil {
-		klog.V(3).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
+		klog.V(4).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
 		return nil, api.AsStatus(fmt.Errorf("no validated victims on Node <%s>: %v", nodeInfo.Name, err))
 	}
 

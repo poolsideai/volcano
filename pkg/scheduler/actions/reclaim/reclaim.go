@@ -92,7 +92,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 
 		for _, task := range pendingJobTopology {
 			for _, t := range task.TasksToEvict {
-				err := ssn.Evict(t, "reclaim for job "+pendingJob.Name)
+				err := ssn.Evict(t, "reclaim for job "+string(pendingJob.Queue)+"/"+pendingJob.Name)
 				if err != nil {
 					klog.Errorf("Failed to evict task <%s/%s> for job <%s/%s>: %v",
 						t.Namespace, t.Name, pendingJob.Namespace, pendingJob.Name, err)

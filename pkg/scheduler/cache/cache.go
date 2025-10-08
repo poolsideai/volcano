@@ -1017,13 +1017,13 @@ func (sc *SchedulerCache) taskUnschedulable(task *schedulingapi.TaskInfo, reason
 		pod = pod.DeepCopy()
 
 		if updateCond && podutil.UpdatePodCondition(&pod.Status, condition) {
-			klog.V(3).Infof("Updating pod condition for %s/%s to (%s==%s)", pod.Namespace, pod.Name, condition.Type, condition.Status)
+			klog.V(4).Infof("Updating pod condition for %s/%s to (%s==%s)", pod.Namespace, pod.Name, condition.Type, condition.Status)
 		}
 
 		// if nominatedNode field changed, we should update it to the pod status, for k8s
 		// autoscaler will check this field and ignore this pod when scale up.
 		if updateNomiNode {
-			klog.V(3).Infof("Updating pod nominatedNodeName for %s/%s from (%s) to (%s)", pod.Namespace, pod.Name, pod.Status.NominatedNodeName, nominatedNodeName)
+			klog.V(4).Infof("Updating pod nominatedNodeName for %s/%s from (%s) to (%s)", pod.Namespace, pod.Name, pod.Status.NominatedNodeName, nominatedNodeName)
 			pod.Status.NominatedNodeName = nominatedNodeName
 		}
 
