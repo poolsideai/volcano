@@ -373,7 +373,7 @@ func (jc *jobCache) deleteJob(job *apis.JobInfo) {
 }
 
 func (jc *jobCache) retryDeleteJob(job *apis.JobInfo) {
-	klog.V(3).Infof("Retry to delete Job <%v/%v>",
+	klog.V(4).Infof("Retry to delete Job <%v/%v>",
 		job.Namespace, job.Name)
 
 	jc.deletedJobs.AddRateLimited(job)

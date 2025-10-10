@@ -1048,7 +1048,7 @@ func (sc *SchedulerCache) deleteJob(job *schedulingapi.JobInfo) {
 }
 
 func (sc *SchedulerCache) retryDeleteJob(job *schedulingapi.JobInfo) {
-	klog.V(3).Infof("Retry to delete Job <%v:%v/%v>", job.UID, job.Namespace, job.Name)
+	klog.V(4).Infof("Retry to delete Job <%v:%v/%v>", job.UID, job.Namespace, job.Name)
 
 	sc.DeletedJobs.AddRateLimited(job)
 }

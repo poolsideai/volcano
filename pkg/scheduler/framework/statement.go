@@ -50,6 +50,21 @@ type operation struct {
 	reason string
 }
 
+func (o *operation) String() string {
+	opName := func(o Operation) string {
+		switch o {
+		case Evict:
+			return "Evict"
+		case Pipeline:
+			return "Pipeline"
+		case Allocate:
+			return "Allocate"
+		}
+		return "Unknown"
+	}
+	return fmt.Sprintf("operation: %s, task: %s/%s, reason: %s", opName(o.name), o.task.Job, o.task.Name, o.reason)
+}
+
 // Statement structure
 type Statement struct {
 	operations []operation
@@ -316,7 +331,7 @@ func (s *Statement) Allocate(task *api.TaskInfo, nodeInfo *api.NodeInfo) (err er
 			task.Namespace, task.Name, hostname, len(errInfos))
 	} else {
 		// Update status in session
-		klog.V(3).Info("Allocating operations ...")
+		klog.V(4).Info("Allocating operations ...")
 		s.operations = append(s.operations, operation{
 			name: Allocate,
 			task: task,

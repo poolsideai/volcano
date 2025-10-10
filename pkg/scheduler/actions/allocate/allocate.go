@@ -370,7 +370,7 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 
 		// check if the task with its spec has already predicates failed
 		if job.TaskHasFitErrors(task) {
-			klog.V(3).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
+			klog.V(4).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
 			continue
 		}
 
