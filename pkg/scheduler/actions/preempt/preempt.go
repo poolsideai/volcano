@@ -171,12 +171,13 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 
 				// If not preemptor tasks, next job.
 				if preemptorTasks[preemptorJob.UID].Empty() {
-					klog.V(3).Infof("No preemptor task in job <%s/%s>.",
+					klog.V(4).Infof("No preemptor task in job <%s/%s>.",
 						preemptorJob.Namespace, preemptorJob.Name)
 					break
 				}
 
 				preemptor := preemptorTasks[preemptorJob.UID].Pop().(*api.TaskInfo)
+				klog.V(3).Infof("Preemptor task <%s/%s/%s>", preemptorJob.Queue, preemptorJob.Name, preemptor.Name)
 
 				assigned, err = pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
 					// Ignore non running task.
@@ -204,6 +205,9 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 
 			// Commit changes only if job is pipelined, otherwise try next job.
 			if ssn.JobPipelined(preemptorJob) {
+				for _, op := range stmt.Operations() {
+					klog.V(3).Infof("Preemptor <%s/%s> committed operation: %+v", preemptorJob.Queue, preemptorJob.Name, op)
+				}
 				stmt.Commit()
 			} else {
 				stmt.Discard()

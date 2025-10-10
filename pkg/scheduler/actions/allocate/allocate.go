@@ -152,6 +152,7 @@ func (alloc *Action) allocateResources(queues *util.PriorityQueue, jobsMap map[a
 		}
 
 		job := jobs.Pop().(*api.JobInfo)
+		klog.V(3).Infof("[poolside] Scheduling job %s", job.Name)
 		if _, found = pendingTasks[job.UID]; !found {
 			tasks := util.NewPriorityQueue(ssn.TaskOrderFn)
 			for _, task := range job.TaskStatusIndex[api.Pending] {

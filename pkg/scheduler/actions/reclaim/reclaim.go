@@ -70,6 +70,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		}
 
 		pendingJob := pendingJobs.Pop().(*api.JobInfo)
+		klog.V(3).Infof("Reclaiming resources for job <%s/%s>", pendingJob.Queue, pendingJob.Name)
 		// it uses the PreemptiveFn of the capacity plugin to check if the queue can reclaim.
 		// A queue can not reclaim when allocated + job.TotalRequest > deserved.
 		if !ssn.Preemptive(ssn.Queues[pendingJob.Queue], pendingJob) {
@@ -132,7 +133,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		if jobToEvict.Queue == pendingJob.Queue {
 			continue
 		}
-		klog.V(3).Infof("Checking if job <%s/%s> can be evicted", jobToEvict.Queue, jobToEvict.Name)
+		klog.V(3).Infof("JobToEvict: <%s/%s>", jobToEvict.Queue, jobToEvict.Name)
 		// first we check if the queue is overused
 		if !isQueueOverused(ssn, jobToEvict) {
 			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Queue, jobToEvict.Name)
@@ -144,7 +145,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 			klog.V(3).Infof("Job <%s/%s> can not be evicted because the node can not accommodate the task", jobToEvict.Queue, jobToEvict.Name)
 			continue
 		}
-		klog.V(3).Infof("found nodes to accommodate %d tasks for job <%s/%s>", len(pendingJobTopology), pendingJob.Queue, pendingJob.Name)
+		klog.V(3).Infof("Job %s/%s will evict tasks: %v", pendingJob.Queue, pendingJob.Name, pendingJobTopology)
 
 		for _, n := range pendingJobTopology {
 			finalPendingJobTopology[n.PendingTask.Name] = n
@@ -153,7 +154,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		}
 
 		if reclaimedGPU >= pendingJob.GetTotalRequestGPU() {
-			klog.V(3).Infof("found enough resources to reclaim for job <%s/%s>", pendingJob.Queue, pendingJob.Name)
+			klog.V(3).Infof("Job <%s/%s> will reclaim enough resources", pendingJob.Queue, pendingJob.Name)
 			reclaimedEnough = true
 			break
 		}
@@ -278,19 +279,6 @@ func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.J
 		}
 	}
 	return pendingJobTopology
-}
-
-func deleteFromSlice[T any](slice []T, index int) []T {
-	if index < 0 || index >= len(slice) {
-		return slice
-	}
-	if index == 0 {
-		return slice[1:]
-	}
-	if index == len(slice)-1 {
-		return slice[:index]
-	}
-	return append(slice[:index], slice[index+1:]...)
 }
 
 func preempteeJobOrder(ssn *framework.Session) func(l, r interface{}) bool {
