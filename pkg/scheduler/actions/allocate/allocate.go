@@ -364,13 +364,13 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 	for !tasks.Empty() {
 		task := tasks.Pop().(*api.TaskInfo)
 		if !ssn.Allocatable(queue, task) {
-			klog.V(4).Infof("Queue <%s> is overused when considering task <%s>, ignore it.", queue.Name, task.Name)
+			klog.V(3).Infof("Queue <%s> is overused when considering task <%s/%s>, ignore it.", queue.Name, task.Job, task.Name)
 			continue
 		}
 
 		// check if the task with its spec has already predicates failed
 		if job.TaskHasFitErrors(task) {
-			klog.V(5).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
+			klog.V(3).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
 			continue
 		}
 
@@ -549,7 +549,7 @@ func (alloc *Action) prioritizeNodes(ssn *framework.Session, task *api.TaskInfo,
 func (alloc *Action) allocateResourcesForTask(stmt *framework.Statement, task *api.TaskInfo, node *api.NodeInfo, job *api.JobInfo) (err error) {
 	// Allocate idle resource to the task.
 	if task.InitResreq.LessEqual(node.Idle, api.Zero) {
-		klog.V(3).Infof("Binding Task <%v/%v> to node <%v>", task.Namespace, task.Name, node.Name)
+		klog.V(3).Infof("Binding Task <%s/%s/%s> to node <%v>", job.Queue, task.Job, task.Name, node.Name)
 		if err = stmt.Allocate(task, node); err != nil {
 			klog.Errorf("Failed to bind Task %v on %v in Session %v, err: %v",
 				task.UID, node.Name, alloc.session.UID, err)
