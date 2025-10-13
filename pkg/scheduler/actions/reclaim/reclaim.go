@@ -76,7 +76,7 @@ func (ra *Action) Execute(ssn *framework.Session) {
 		// it uses the PreemptiveFn of the capacity plugin to check if the queue can reclaim.
 		// A queue can not reclaim when allocated + job.TotalRequest > deserved.
 		if !ssn.Preemptive(ssn.Queues[pendingJob.Queue], pendingJob) {
-			klog.V(3).Infof("Job <%s/%s> can not reclaim resources due to overusage", pendingJob.Queue, pendingJob.Name)
+			klog.V(3).Infof("[poolside] Job <%s/%s> can not reclaim resources due to overusage", pendingJob.Queue, pendingJob.Name)
 			continue
 		}
 
@@ -162,9 +162,9 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		}
 	}
 	if reclaimedEnough {
-		klog.V(3).Infof("Job <%s/%s> will reclaim enough resources: %v", pendingJob.Queue, pendingJob.Name, finalPendingJobTopology)
+		klog.V(3).Infof("[poolside] Job <%s/%s> will reclaim enough resources: %v", pendingJob.Queue, pendingJob.Name, finalPendingJobTopology)
 	} else {
-		klog.V(3).Infof("Job <%s/%s> cannot reclaim resources due to not enough resources. Considered jobs: %v", pendingJob.Queue, pendingJob.Name, consideredJobs)
+		klog.V(3).Infof("[poolside] Job <%s/%s> cannot reclaim resources due to not enough resources. Considered jobs: %v", pendingJob.Queue, pendingJob.Name, consideredJobs)
 	}
 	return reclaimedEnough, reclaimedGPU, finalPendingJobTopology
 }

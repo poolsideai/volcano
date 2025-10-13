@@ -441,12 +441,12 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 	}
 
 	if ssn.JobReady(job) {
-		klog.V(3).InfoS("Job ready, return statement", "jobName", job.UID)
+		klog.V(3).InfoS("[poolside] Job ready, return statement", "jobName", job.UID)
 		updateJobAllocatedHyperNode(job, jobNewAllocatedHyperNode)
 		return stmt
 	} else {
 		if !ssn.JobPipelined(job) {
-			klog.V(3).InfoS("cannot find free capacity for job", "job", string(job.Queue)+"/"+string(job.UID))
+			klog.V(3).InfoS("[poolside] cannot find free capacity for job", "job", string(job.Queue)+"/"+string(job.UID))
 			stmt.Discard()
 		}
 		return nil

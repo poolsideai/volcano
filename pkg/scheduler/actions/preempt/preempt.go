@@ -206,7 +206,7 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 			// Commit changes only if job is pipelined, otherwise try next job.
 			if ssn.JobPipelined(preemptorJob) {
 				for _, op := range stmt.Operations() {
-					klog.V(3).Infof("Preemptor <%s/%s> committed operation: %+v", preemptorJob.Queue, preemptorJob.Name, op)
+					klog.V(3).Infof("[poolside] Preemptor <%s/%s> committed operation: %s", preemptorJob.Queue, preemptorJob.Name, op.String())
 				}
 				stmt.Commit()
 			} else {
@@ -220,56 +220,56 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 		}
 
 		// Preemption between Task within Job.
-		for _, job := range underRequest {
-			// Fix: preemptor numbers lose when in same job
-			preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
-			for _, task := range job.TaskStatusIndex[api.Pending] {
-				// Again, skip scheduling gated tasks
-				if task.SchGated {
-					continue
-				}
-				preemptorTasks[job.UID].Push(task)
-			}
-			for {
-				if _, found := preemptorTasks[job.UID]; !found {
-					break
-				}
+		// for _, job := range underRequest {
+		// 	// Fix: preemptor numbers lose when in same job
+		// 	preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
+		// 	for _, task := range job.TaskStatusIndex[api.Pending] {
+		// 		// Again, skip scheduling gated tasks
+		// 		if task.SchGated {
+		// 			continue
+		// 		}
+		// 		preemptorTasks[job.UID].Push(task)
+		// 	}
+		// 	for {
+		// 		if _, found := preemptorTasks[job.UID]; !found {
+		// 			break
+		// 		}
 
-				if preemptorTasks[job.UID].Empty() {
-					break
-				}
+		// 		if preemptorTasks[job.UID].Empty() {
+		// 			break
+		// 		}
 
-				preemptor := preemptorTasks[job.UID].Pop().(*api.TaskInfo)
+		// 		preemptor := preemptorTasks[job.UID].Pop().(*api.TaskInfo)
 
-				stmt := framework.NewStatement(ssn)
-				assigned, err := pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
-					// Ignore non running task.
-					if !api.PreemptableStatus(task.Status) {
-						return false
-					}
-					// BestEffort pod is not supported to preempt unBestEffort pod.
-					if preemptor.BestEffort && !task.BestEffort {
-						return false
-					}
-					// should skip not preemptable pod
-					if !task.Preemptable {
-						return false
-					}
+		// 		stmt := framework.NewStatement(ssn)
+		// 		assigned, err := pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
+		// 			// Ignore non running task.
+		// 			if !api.PreemptableStatus(task.Status) {
+		// 				return false
+		// 			}
+		// 			// BestEffort pod is not supported to preempt unBestEffort pod.
+		// 			if preemptor.BestEffort && !task.BestEffort {
+		// 				return false
+		// 			}
+		// 			// should skip not preemptable pod
+		// 			if !task.Preemptable {
+		// 				return false
+		// 			}
 
-					// Preempt tasks within job.
-					return preemptor.Job == task.Job
-				}, ph)
-				if err != nil {
-					klog.V(3).Infof("Preemptor <%s/%s> failed to preempt Task , err: %s", preemptor.Namespace, preemptor.Name, err)
-				}
-				stmt.Commit()
+		// 			// Preempt tasks within job.
+		// 			return preemptor.Job == task.Job
+		// 		}, ph)
+		// 		if err != nil {
+		// 			klog.V(3).Infof("Preemptor <%s/%s> failed to preempt Task , err: %s", preemptor.Namespace, preemptor.Name, err)
+		// 		}
+		// 		stmt.Commit()
 
-				// If no preemption, next job.
-				if !assigned {
-					break
-				}
-			}
-		}
+		// 		// If no preemption, next job.
+		// 		if !assigned {
+		// 			break
+		// 		}
+		// 	}
+		// }
 	}
 }
 
