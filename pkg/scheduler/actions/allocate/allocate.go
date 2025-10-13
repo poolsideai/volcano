@@ -446,6 +446,7 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 		return stmt
 	} else {
 		if !ssn.JobPipelined(job) {
+			klog.V(3).InfoS("cannot find free capacity for job", "job", string(job.Queue)+"/"+string(job.UID))
 			stmt.Discard()
 		}
 		return nil

@@ -367,7 +367,7 @@ func (pmpt *Action) normalPreempt(
 				preempteeQueue = string(preempteeJob.Queue)
 			}
 			klog.V(3).Infof("Try to preempt Task <%s/%s> for Task <%s/%s>", preempteeQueue, preemptee.Name, currentQueue.Name, preemptor.Name)
-			if err := stmt.Evict(preemptee, "preempt "); err != nil {
+			if err := stmt.Evict(preemptee, fmt.Sprintf("preempt for task <%s/%s>", currentQueue.Name, preemptor.Name)); err != nil {
 				klog.Errorf("Failed to preempt Task <%s/%s> for Task <%s/%s>: %v",
 					preemptee.Namespace, preemptee.Name, preemptor.Namespace, preemptor.Name, err)
 				continue

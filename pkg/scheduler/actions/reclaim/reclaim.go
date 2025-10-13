@@ -127,6 +127,7 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 	reclaimedGPU := int64(0)
 	reclaimedEnough := false
 	finalPendingJobTopology := map[string]*EvictTask{}
+	consideredJobs := []string{}
 	for {
 		if reclaimedEnough || runningJobs.Empty() {
 			break
@@ -135,19 +136,19 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		if jobToEvict.Queue == pendingJob.Queue {
 			continue
 		}
-		klog.V(3).Infof("JobToEvict: <%s/%s>", jobToEvict.Queue, jobToEvict.Name)
 		// first we check if the queue is overused
 		if !isQueueOverused(ssn, jobToEvict) {
 			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Queue, jobToEvict.Name)
 			continue
 		}
+		klog.V(3).Infof("JobToEvict: <%s/%s>", jobToEvict.Queue, jobToEvict.Name)
+		consideredJobs = append(consideredJobs, fmt.Sprintf("%s/%s", jobToEvict.Queue, jobToEvict.Name))
 		// then we need to check if the node can accommodate the task
 		pendingJobTopology := findNodesForPendingJob(ssn, jobToEvict, pendingJob)
 		if len(pendingJobTopology) == 0 {
 			klog.V(3).Infof("Job <%s/%s> can not be evicted because the node can not accommodate the task", jobToEvict.Queue, jobToEvict.Name)
 			continue
 		}
-		klog.V(3).Infof("Job %s/%s will evict tasks: %v", pendingJob.Queue, pendingJob.Name, pendingJobTopology)
 
 		for _, n := range pendingJobTopology {
 			finalPendingJobTopology[n.PendingTask.Name] = n
@@ -156,10 +157,14 @@ func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runn
 		}
 
 		if reclaimedGPU >= pendingJob.GetTotalRequestGPU() {
-			klog.V(3).Infof("Job <%s/%s> will reclaim enough resources", pendingJob.Queue, pendingJob.Name)
 			reclaimedEnough = true
 			break
 		}
+	}
+	if reclaimedEnough {
+		klog.V(3).Infof("Job <%s/%s> will reclaim enough resources: %v", pendingJob.Queue, pendingJob.Name, finalPendingJobTopology)
+	} else {
+		klog.V(3).Infof("Job <%s/%s> cannot reclaim resources due to not enough resources. Considered jobs: %v", pendingJob.Queue, pendingJob.Name, consideredJobs)
 	}
 	return reclaimedEnough, reclaimedGPU, finalPendingJobTopology
 }
