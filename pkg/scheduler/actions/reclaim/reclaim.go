@@ -23,6 +23,8 @@ limitations under the License.
 package reclaim
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
@@ -173,6 +175,14 @@ type EvictTask struct {
 	GPU          int64
 	TasksToEvict []*api.TaskInfo
 	PendingTask  *api.TaskInfo
+}
+
+func (e *EvictTask) String() string {
+	tasks := []string{}
+	for _, t := range e.TasksToEvict {
+		tasks = append(tasks, t.Name)
+	}
+	return fmt.Sprintf("[PendingTask: %s, NodeName: %s, TasksToEvict: %v]", e.PendingTask.Name, e.NodeName, tasks)
 }
 
 func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) map[string]*EvictTask {
