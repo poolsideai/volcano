@@ -1079,3 +1079,24 @@ func (ji *JobInfo) ResetFitErr() {
 	ji.JobFitErrors = ""
 	ji.NodesFitErrors = make(map[TaskID]*FitErrors)
 }
+
+func (j *JobInfo) GetTotalRequestGPU() int64 {
+	return int64(j.TotalRequest.Get("nvidia.com/gpu"))
+}
+
+func (j *JobInfo) GetAllocatedGPU() int64 {
+	return int64(j.Allocated.Get("nvidia.com/gpu"))
+}
+
+func (j *JobInfo) GetElasticGPUs() int64 {
+	elasticReplicas := len(j.Tasks) - int(j.MinAvailable)
+	if elasticReplicas <= 0 {
+		return 0
+	}
+	gpuPerTask := int64(0)
+	for _, v := range j.Tasks {
+		gpuPerTask = int64(v.InitResreq.ScalarResources["nvidia.com/gpu"])
+		break
+	}
+	return int64(elasticReplicas) * gpuPerTask
+}

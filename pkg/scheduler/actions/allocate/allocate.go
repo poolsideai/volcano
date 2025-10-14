@@ -78,7 +78,7 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 
 	alloc.session = ssn
 	alloc.pickUpQueuesAndJobs(queues, jobsMap)
-	klog.V(3).Infof("Try to allocate resource to %d Queues", len(jobsMap))
+	klog.V(4).Infof("Try to allocate resource to %d Queues", len(jobsMap))
 	alloc.allocateResources(queues, jobsMap)
 }
 
@@ -152,6 +152,7 @@ func (alloc *Action) allocateResources(queues *util.PriorityQueue, jobsMap map[a
 		}
 
 		job := jobs.Pop().(*api.JobInfo)
+		klog.V(3).Infof("[poolside] Scheduling job %s", job.Name)
 		if _, found = pendingTasks[job.UID]; !found {
 			tasks := util.NewPriorityQueue(ssn.TaskOrderFn)
 			for _, task := range job.TaskStatusIndex[api.Pending] {
@@ -363,17 +364,17 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 	for !tasks.Empty() {
 		task := tasks.Pop().(*api.TaskInfo)
 		if !ssn.Allocatable(queue, task) {
-			klog.V(3).Infof("Queue <%s> is overused when considering task <%s>, ignore it.", queue.Name, task.Name)
+			klog.V(3).Infof("Queue <%s> is overused when considering task <%s/%s>, ignore it.", queue.Name, task.Job, task.Name)
 			continue
 		}
 
 		// check if the task with its spec has already predicates failed
 		if job.TaskHasFitErrors(task) {
-			klog.V(5).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
+			klog.V(4).Infof("Task %s with role spec %s has already predicated failed, skip", task.Name, task.TaskRole)
 			continue
 		}
 
-		klog.V(3).Infof("There are <%d> nodes for Job <%v/%v>", len(ssn.Nodes), job.Namespace, job.Name)
+		klog.V(4).Infof("There are <%d> nodes for Job <%v/%v>", len(ssn.Nodes), job.Namespace, job.Name)
 
 		if err := ssn.PrePredicateFn(task); err != nil {
 			klog.V(3).Infof("PrePredicate for task %s/%s failed for: %v", task.Namespace, task.Name, err)
@@ -440,11 +441,12 @@ func (alloc *Action) allocateResourcesForTasks(tasks *util.PriorityQueue, job *a
 	}
 
 	if ssn.JobReady(job) {
-		klog.V(3).InfoS("Job ready, return statement", "jobName", job.UID)
+		klog.V(3).InfoS("[poolside] Job ready, return statement", "jobName", job.UID)
 		updateJobAllocatedHyperNode(job, jobNewAllocatedHyperNode)
 		return stmt
 	} else {
 		if !ssn.JobPipelined(job) {
+			klog.V(3).InfoS("[poolside] cannot find free capacity for job", "job", string(job.Queue)+"/"+string(job.UID))
 			stmt.Discard()
 		}
 		return nil
@@ -548,7 +550,7 @@ func (alloc *Action) prioritizeNodes(ssn *framework.Session, task *api.TaskInfo,
 func (alloc *Action) allocateResourcesForTask(stmt *framework.Statement, task *api.TaskInfo, node *api.NodeInfo, job *api.JobInfo) (err error) {
 	// Allocate idle resource to the task.
 	if task.InitResreq.LessEqual(node.Idle, api.Zero) {
-		klog.V(3).Infof("Binding Task <%v/%v> to node <%v>", task.Namespace, task.Name, node.Name)
+		klog.V(3).Infof("Binding Task <%s/%s/%s> to node <%v>", job.Queue, task.Job, task.Name, node.Name)
 		if err = stmt.Allocate(task, node); err != nil {
 			klog.Errorf("Failed to bind Task %v on %v in Session %v, err: %v",
 				task.UID, node.Name, alloc.session.UID, err)
@@ -563,7 +565,7 @@ func (alloc *Action) allocateResourcesForTask(stmt *framework.Statement, task *a
 		return
 	}
 
-	klog.V(3).Infof("Predicates failed in allocate for task <%s/%s> on node <%s> with limited resources",
+	klog.V(4).Infof("Predicates failed in allocate for task <%s/%s> on node <%s> with limited resources",
 		task.Namespace, task.Name, node.Name)
 
 	// Allocate releasing resource to the task if any.

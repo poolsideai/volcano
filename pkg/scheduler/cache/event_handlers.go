@@ -272,7 +272,7 @@ func (sc *SchedulerCache) syncTask(oldTask *schedulingapi.TaskInfo) error {
 				klog.Errorf("Failed to delete Pod <%v/%v> and remove from cache: %s", oldTask.Namespace, oldTask.Name, err.Error())
 				return err
 			}
-			klog.V(3).Infof("Pod <%v/%v> was deleted, removed from cache.", oldTask.Namespace, oldTask.Name)
+			klog.V(4).Infof("Pod <%v/%v> was deleted, removed from cache.", oldTask.Namespace, oldTask.Name)
 
 			return nil
 		}
@@ -367,7 +367,7 @@ func (sc *SchedulerCache) deletePod(pod *v1.Pod) error {
 		}
 	}
 	if err := sc.deleteTask(task); err != nil {
-		klog.Warningf("Failed to delete task: %v", err)
+		klog.V(4).Infof("Failed to delete task: %v", err)
 	}
 
 	// If job was terminated, delete it.
@@ -395,7 +395,7 @@ func (sc *SchedulerCache) AddPod(obj interface{}) {
 			pod.Namespace, pod.Name, err)
 		return
 	}
-	klog.V(3).Infof("Added pod <%s/%v> into cache.", pod.Namespace, pod.Name)
+	klog.V(4).Infof("Added pod <%s/%v> into cache.", pod.Namespace, pod.Name)
 }
 
 // UpdatePod update pod to scheduler cache
@@ -450,7 +450,7 @@ func (sc *SchedulerCache) DeletePod(obj interface{}) {
 		return
 	}
 
-	klog.V(3).Infof("Deleted pod <%s/%v> from cache.", pod.Namespace, pod.Name)
+	klog.V(4).Infof("Deleted pod <%s/%v> from cache.", pod.Namespace, pod.Name)
 }
 
 // addNodeImageStates adds states of the images on given node to the given nodeInfo and update the imageStates in
@@ -610,7 +610,7 @@ func (sc *SchedulerCache) SyncNode(nodeName string) error {
 				return deleteErr
 			}
 
-			klog.V(3).Infof("Node <%s> was deleted, removed from cache.", nodeName)
+			klog.V(4).Infof("Node <%s> was deleted, removed from cache.", nodeName)
 			return nil
 		}
 		klog.Errorf("Failed to get node %s, error: %v", nodeName, err)

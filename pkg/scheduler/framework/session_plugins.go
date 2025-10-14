@@ -302,7 +302,7 @@ func (ssn *Session) Overused(queue *api.QueueInfo) bool {
 }
 
 // Preemptive invoke can preemptive function of the plugins
-func (ssn *Session) Preemptive(queue *api.QueueInfo, candidate *api.TaskInfo) bool {
+func (ssn *Session) Preemptive(queue *api.QueueInfo, candidate *api.JobInfo) bool {
 	for _, tier := range ssn.Tiers {
 		for _, plugin := range tier.Plugins {
 			of, found := ssn.preemptiveFns[plugin.Name]

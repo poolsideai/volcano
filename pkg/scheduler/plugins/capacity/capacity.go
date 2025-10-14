@@ -58,6 +58,7 @@ type queueAttr struct {
 	queueID   api.QueueID
 	name      string
 	share     float64
+	priority  int32
 	ancestors []api.QueueID
 	children  map[api.QueueID]*queueAttr
 
@@ -152,19 +153,19 @@ func (cp *capacityPlugin) OnSessionOpen(ssn *framework.Session) {
 		}
 
 		queue := obj.(*api.QueueInfo)
-		task := candidate.(*api.TaskInfo)
+		job := candidate.(*api.JobInfo)
 		if queue.Queue.Status.State != scheduling.QueueStateOpen {
-			klog.V(3).Infof("Queue <%s> current state: %s, is not open state, can not reclaim for <%s>.", queue.Name, queue.Queue.Status.State, task.Name)
+			klog.V(3).Infof("Queue <%s> current state: %s, is not open state, can not reclaim for <%s>.", queue.Name, queue.Queue.Status.State, job.Name)
 			return false
 		}
 		attr := cp.queueOpts[queue.UID]
 
-		futureUsed := attr.allocated.Clone().Add(task.Resreq)
-		overused := !futureUsed.LessEqualWithDimension(attr.deserved, task.Resreq)
+		futureUsed := attr.allocated.Clone().Add(job.TotalRequest)
+		overused := !futureUsed.LessEqualWithDimension(attr.deserved, job.TotalRequest)
 		metrics.UpdateQueueOverused(attr.name, overused)
 		if overused {
 			klog.V(3).Infof("Queue <%v> can not reclaim, deserved <%v>, allocated <%v>, share <%v>, requested <%v>",
-				queue.Name, attr.deserved, attr.allocated, attr.share, task.Resreq)
+				queue.Name, attr.deserved, attr.allocated, attr.share, job.TotalRequest)
 		}
 
 		// PreemptiveFn is the opposite of OverusedFn in proportion plugin cause as long as there is a one-dimensional
@@ -388,8 +389,9 @@ func (cp *capacityPlugin) buildQueueAttrs(ssn *framework.Session) {
 		if _, found := cp.queueOpts[job.Queue]; !found {
 			queue := ssn.Queues[job.Queue]
 			attr := &queueAttr{
-				queueID: queue.UID,
-				name:    queue.Name,
+				queueID:  queue.UID,
+				name:     queue.Name,
+				priority: queue.Queue.Spec.Priority,
 
 				deserved:  api.NewResource(queue.Queue.Spec.Deserved),
 				allocated: api.EmptyResource(),

@@ -23,6 +23,8 @@ limitations under the License.
 package reclaim
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/klog/v2"
 
@@ -47,191 +49,328 @@ func (ra *Action) Execute(ssn *framework.Session) {
 	klog.V(5).Infof("Enter Reclaim ...")
 	defer klog.V(5).Infof("Leaving Reclaim ...")
 
-	queues := util.NewPriorityQueue(ssn.QueueOrderFn)
-	queueMap := map[api.QueueID]*api.QueueInfo{}
-
-	preemptorsMap := map[api.QueueID]*util.PriorityQueue{}
-	preemptorTasks := map[api.JobID]*util.PriorityQueue{}
-
-	klog.V(3).Infof("There are <%d> Jobs and <%d> Queues in total for scheduling.",
-		len(ssn.Jobs), len(ssn.Queues))
+	pendingJobs := util.NewPriorityQueue(preemptorJobOrder(ssn))
+	runningJobs := util.NewPriorityQueue(preempteeJobOrder(ssn))
 
 	for _, job := range ssn.Jobs {
+		// job.IsPending check if the job has passed the Enqueue phase.
+		// We shouldn't really have any pending job in terms of Volcano here.
 		if job.IsPending() {
 			continue
 		}
-
-		if vr := ssn.JobValid(job); vr != nil && !vr.Pass {
-			klog.V(4).Infof("Job <%s/%s> Queue <%s> skip reclaim, reason: %v, message %v", job.Namespace, job.Name, job.Queue, vr.Reason, vr.Message)
-			continue
-		}
-
-		if queue, found := ssn.Queues[job.Queue]; !found {
-			klog.Errorf("Failed to find Queue <%s> for Job <%s/%s>", job.Queue, job.Namespace, job.Name)
-			continue
-		} else if _, existed := queueMap[queue.UID]; !existed {
-			klog.V(4).Infof("Added Queue <%s> for Job <%s/%s>", queue.Name, job.Namespace, job.Name)
-			queueMap[queue.UID] = queue
-			queues.Push(queue)
-		}
-
-		if ssn.JobStarving(job) {
-			if _, found := preemptorsMap[job.Queue]; !found {
-				preemptorsMap[job.Queue] = util.NewPriorityQueue(ssn.JobOrderFn)
-			}
-			preemptorsMap[job.Queue].Push(job)
-			preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
-			for _, task := range job.TaskStatusIndex[api.Pending] {
-				if task.SchGated {
-					continue
-				}
-				preemptorTasks[job.UID].Push(task)
-			}
+		// When job is starving, it means the job is pending to scheduled in our terms.
+		if job.IsStarving() {
+			pendingJobs.Push(job)
+		} else {
+			runningJobs.Push(job)
 		}
 	}
 
 	for {
-		// If no queues, break
-		if queues.Empty() {
+		if pendingJobs.Empty() {
 			break
 		}
 
-		var job *api.JobInfo
-		var task *api.TaskInfo
-
-		queue := queues.Pop().(*api.QueueInfo)
-		if ssn.Overused(queue) {
-			klog.V(3).Infof("Queue <%s> is overused, ignore it.", queue.Name)
+		pendingJob := pendingJobs.Pop().(*api.JobInfo)
+		klog.V(3).Infof("Reclaiming resources for job <%s/%s>", pendingJob.Queue, pendingJob.Name)
+		// it uses the PreemptiveFn of the capacity plugin to check if the queue can reclaim.
+		// A queue can not reclaim when allocated + job.TotalRequest > deserved.
+		if !ssn.Preemptive(ssn.Queues[pendingJob.Queue], pendingJob) {
+			klog.V(3).Infof("[poolside] Job <%s/%s> can not reclaim resources due to overusage", pendingJob.Queue, pendingJob.Name)
 			continue
 		}
 
-		// Found "high" priority job
-		jobs, found := preemptorsMap[queue.UID]
-		if !found || jobs.Empty() {
-			continue
-		} else {
-			job = jobs.Pop().(*api.JobInfo)
-		}
-
-		// Found "high" priority task to reclaim others
-		if tasks, found := preemptorTasks[job.UID]; !found || tasks.Empty() || !ssn.JobStarving(job) {
-			continue
-		} else {
-			task = tasks.Pop().(*api.TaskInfo)
-		}
-
-		if task.Pod.Spec.PreemptionPolicy != nil && *task.Pod.Spec.PreemptionPolicy == v1.PreemptNever {
-			klog.V(3).Infof("Task %s/%s is not eligible to preempt other tasks due to preemptionPolicy is Never", task.Namespace, task.Name)
-			// TODO: In order to avoid blocking other tasks in the job or other jobs in the queue to reclaim resources, the job and queue need
-			// to be pushed back to the priority queue. Need to refactor the framework of reclaim action, see issue: https://github.com/volcano-sh/volcano/issues/3738
-			jobs.Push(job)
-			queues.Push(queue)
+		if !jobPolicyAllowPeemption(pendingJob) {
+			klog.V(3).Infof("Job <%s/%s> can not reclaim resources due to preemption policy", pendingJob.Queue, pendingJob.Name)
 			continue
 		}
 
-		//In allocate action we need check all the ancestor queues' capability but in reclaim action we should just check current queue's capability, and reclaim happens when queue not allocatable so we just need focus on the reclaim here.
-		//So it's more descriptive to user preempt related semantics.
-		if !ssn.Preemptive(queue, task) {
-			klog.V(3).Infof("Queue <%s> can not reclaim by preempt others when considering task <%s> , ignore it.", queue.Name, task.Name)
+		reclaimedEnough, reclaimedGPU, pendingJobTopology := getReclaimedResources(ssn, pendingJob.Clone(), runningJobs.Clone())
+		if !reclaimedEnough {
+			klog.V(3).Infof(`Job <%s/%s> can not reclaim resources due to not enough resources. Reclaimed GPU: <%d>, requested GPUs: <%d>`,
+				pendingJob.Queue, pendingJob.Name, reclaimedGPU, pendingJob.GetTotalRequestGPU())
+
 			continue
 		}
 
-		if err := ssn.PrePredicateFn(task); err != nil {
-			klog.V(3).Infof("PrePredicate for task %s/%s failed for: %v", task.Namespace, task.Name, err)
-			continue
-		}
-
-		assigned := false
-		// we should filter out those nodes that are UnschedulableAndUnresolvable status got in allocate action
-		totalNodes := ssn.FilterOutUnschedulableAndUnresolvableNodesForTask(task)
-		for _, n := range totalNodes {
-			// When filtering candidate nodes, need to consider the node statusSets instead of the err information.
-			// refer to kube-scheduler preemption code: https://github.com/kubernetes/kubernetes/blob/9d87fa215d9e8020abdc17132d1252536cd752d2/pkg/scheduler/framework/preemption/preemption.go#L422
-			if err := ssn.PredicateForPreemptAction(task, n); err != nil {
-				klog.V(4).Infof("Reclaim predicate for task %s/%s on node %s return error %v ", task.Namespace, task.Name, n.Name, err)
-				continue
-			}
-
-			klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.", task.Namespace, task.Name, n.Name)
-
-			var reclaimees []*api.TaskInfo
-			for _, task := range n.Tasks {
-				// Ignore non running task.
-				if task.Status != api.Running {
-					continue
-				}
-				if !task.Preemptable {
-					continue
-				}
-
-				if j, found := ssn.Jobs[task.Job]; !found {
-					continue
-				} else if j.Queue != job.Queue {
-					q := ssn.Queues[j.Queue]
-					if !q.Reclaimable() {
-						continue
-					}
-					// Clone task to avoid modify Task's status on node.
-					reclaimees = append(reclaimees, task.Clone())
+		for pendingTaskName, task := range pendingJobTopology {
+			for _, t := range task.TasksToEvict {
+				err := ssn.Evict(t, fmt.Sprintf("reclaim for task <%s/%s>", string(pendingJob.Queue), pendingTaskName))
+				if err != nil {
+					klog.Errorf("Failed to evict task <%s/%s> for task <%s/%s>: %v",
+						t.Namespace, t.Name, pendingJob.Namespace, pendingTaskName, err)
 				}
 			}
-
-			if len(reclaimees) == 0 {
-				klog.V(4).Infof("No reclaimees on Node <%s>.", n.Name)
-				continue
-			}
-
-			victims := ssn.Reclaimable(task, reclaimees)
-
-			if err := util.ValidateVictims(task, n, victims); err != nil {
-				klog.V(3).Infof("No validated victims on Node <%s>: %v", n.Name, err)
-				continue
-			}
-
-			victimsQueue := ssn.BuildVictimsPriorityQueue(victims, task)
-
-			resreq := task.InitResreq.Clone()
-			reclaimed := api.EmptyResource()
-
-			// Reclaim victims for tasks.
-			for !victimsQueue.Empty() {
-				reclaimee := victimsQueue.Pop().(*api.TaskInfo)
-				klog.Errorf("Try to reclaim Task <%s/%s> for Tasks <%s/%s>",
-					reclaimee.Namespace, reclaimee.Name, task.Namespace, task.Name)
-				if err := ssn.Evict(reclaimee, "reclaim"); err != nil {
-					klog.Errorf("Failed to reclaim Task <%s/%s> for Tasks <%s/%s>: %v",
-						reclaimee.Namespace, reclaimee.Name, task.Namespace, task.Name, err)
-					continue
-				}
-				reclaimed.Add(reclaimee.Resreq)
-				// If reclaimed enough resources, break loop to avoid Sub panic.
-				if resreq.LessEqual(reclaimed, api.Zero) {
-					break
-				}
-			}
-
-			klog.V(3).Infof("Reclaimed <%v> for task <%s/%s> requested <%v>.",
-				reclaimed, task.Namespace, task.Name, task.InitResreq)
-
-			if task.InitResreq.LessEqual(reclaimed, api.Zero) {
-				if err := ssn.Pipeline(task, n.Name); err != nil {
-					klog.Errorf("Failed to pipeline Task <%s/%s> on Node <%s>",
-						task.Namespace, task.Name, n.Name)
-				}
-
-				// Ignore error of pipeline, will be corrected in next scheduling loop.
-				assigned = true
-
-				break
+			// we still try to pipeline the task even if it fails to evict
+			// because it might be a victim of a gang job
+			if err := ssn.Pipeline(task.PendingTask, task.NodeName); err != nil {
+				klog.Errorf("Failed to pipeline task <%s/%s>: %v", pendingJob.Namespace, pendingTaskName, err)
 			}
 		}
-
-		if assigned {
-			jobs.Push(job)
-		}
-		queues.Push(queue)
 	}
 }
 
 func (ra *Action) UnInitialize() {
+}
+
+func jobPolicyAllowPeemption(job *api.JobInfo) bool {
+	tasks := job.TaskStatusIndex[api.Pending]
+	for _, task := range tasks {
+		if task.Pod.Spec.PreemptionPolicy != nil && *task.Pod.Spec.PreemptionPolicy == v1.PreemptNever {
+			return false
+		}
+	}
+	return true
+}
+
+func getReclaimedResources(ssn *framework.Session, pendingJob *api.JobInfo, runningJobs *util.PriorityQueue) (bool, int64, map[string]*EvictTask) {
+	reclaimedGPU := int64(0)
+	reclaimedEnough := false
+	finalPendingJobTopology := map[string]*EvictTask{}
+	consideredJobs := []string{}
+	for {
+		if reclaimedEnough || runningJobs.Empty() {
+			break
+		}
+		jobToEvict := runningJobs.Pop().(*api.JobInfo)
+		if jobToEvict.Queue == pendingJob.Queue {
+			continue
+		}
+		// first we check if the queue is overused
+		if !isQueueOverused(ssn, jobToEvict) {
+			klog.V(3).Infof("Job <%s/%s> can not be evicted because the queue is not overused", jobToEvict.Queue, jobToEvict.Name)
+			continue
+		}
+		klog.V(3).Infof("JobToEvict: <%s/%s>", jobToEvict.Queue, jobToEvict.Name)
+		consideredJobs = append(consideredJobs, fmt.Sprintf("%s/%s", jobToEvict.Queue, jobToEvict.Name))
+		// then we need to check if the node can accommodate the task
+		pendingJobTopology := findNodesForPendingJob(ssn, jobToEvict, pendingJob)
+		if len(pendingJobTopology) == 0 {
+			klog.V(3).Infof("Job <%s/%s> can not be evicted because the node can not accommodate the task", jobToEvict.Queue, jobToEvict.Name)
+			continue
+		}
+
+		for _, n := range pendingJobTopology {
+			finalPendingJobTopology[n.PendingTask.Name] = n
+			// Count total reclaimed capacity (idle + evicted) allocated to this pending task
+			reclaimedGPU += n.GPU
+		}
+
+		if reclaimedGPU >= pendingJob.GetTotalRequestGPU() {
+			reclaimedEnough = true
+			break
+		}
+	}
+	if reclaimedEnough {
+		klog.V(3).Infof("[poolside] Job <%s/%s> will reclaim enough resources: %v", pendingJob.Queue, pendingJob.Name, finalPendingJobTopology)
+	} else {
+		klog.V(3).Infof("[poolside] Job <%s/%s> cannot reclaim resources due to not enough resources. Considered jobs: %v", pendingJob.Queue, pendingJob.Name, consideredJobs)
+	}
+	return reclaimedEnough, reclaimedGPU, finalPendingJobTopology
+}
+
+func isQueueOverused(ssn *framework.Session, victimJob *api.JobInfo) bool {
+	queueAllocatedGPUs := ssn.Queues[victimJob.Queue].GetAllocatedGPU()
+	queueDeservedGPUs := ssn.Queues[victimJob.Queue].GetDeservedGPU()
+	return queueAllocatedGPUs > queueDeservedGPUs
+}
+
+type EvictTask struct {
+	NodeName     string
+	GPU          int64
+	TasksToEvict []*api.TaskInfo
+	PendingTask  *api.TaskInfo
+}
+
+func (e *EvictTask) String() string {
+	tasks := []string{}
+	for _, t := range e.TasksToEvict {
+		tasks = append(tasks, t.Name)
+	}
+	return fmt.Sprintf("[PendingTask: %s, NodeName: %s, TasksToEvict: %v]", e.PendingTask.Name, e.NodeName, tasks)
+}
+
+func findNodesForPendingJob(ssn *framework.Session, victimJob, pendingJob *api.JobInfo) map[string]*EvictTask {
+	// Build per-node capacity with idle counted once and evictable tasks listed
+	type nodeCapacity struct {
+		nodeName     string
+		idleGPU      int64
+		evictable    []*api.TaskInfo
+		evictableGPU int64
+	}
+
+	nodeCaps := map[string]*nodeCapacity{}
+	for _, t := range victimJob.Tasks {
+		node := ssn.Nodes[t.NodeName]
+		if node == nil {
+			continue
+		}
+		gpu := int64(t.Resreq.ScalarResources["nvidia.com/gpu"])
+		cap, ok := nodeCaps[t.NodeName]
+		if !ok {
+			cap = &nodeCapacity{
+				nodeName:     t.NodeName,
+				idleGPU:      int64(node.FutureIdle().ScalarResources["nvidia.com/gpu"]),
+				evictable:    []*api.TaskInfo{},
+				evictableGPU: 0,
+			}
+			nodeCaps[t.NodeName] = cap
+		}
+		cap.evictable = append(cap.evictable, t)
+		cap.evictableGPU += gpu
+	}
+
+	// record task name -> node name so we know how to pipeline the tasks later
+	pendingJobTopology := map[string]*EvictTask{}
+	for _, task := range pendingJob.Tasks {
+		required := int64(task.Resreq.ScalarResources["nvidia.com/gpu"])
+		placed := false
+		for _, cap := range nodeCaps {
+			totalAvail := cap.idleGPU + cap.evictableGPU
+			if totalAvail < required {
+				continue
+			}
+
+			// simulate consumption on this node
+			remainingIdle := cap.idleGPU
+			remainingTasks := make([]*api.TaskInfo, len(cap.evictable))
+			copy(remainingTasks, cap.evictable)
+
+			result := &EvictTask{
+				NodeName:    cap.nodeName,
+				PendingTask: task,
+				GPU:         0,
+			}
+
+			// use idle first
+			if remainingIdle > 0 {
+				use := remainingIdle
+				if use > required {
+					use = required
+				}
+				remainingIdle -= use
+				required -= use
+				result.GPU += use
+			}
+
+			// then evict tasks until satisfied
+			evictedIdx := 0
+			for required > 0 && evictedIdx < len(remainingTasks) {
+				vt := remainingTasks[evictedIdx]
+				g := int64(vt.Resreq.ScalarResources["nvidia.com/gpu"])
+				result.TasksToEvict = append(result.TasksToEvict, vt)
+				result.GPU += g
+				required -= g
+				evictedIdx++
+			}
+
+			if required > 0 {
+				// not enough even after evictions; try another node
+				continue
+			}
+
+			// commit consumption to this node capacity
+			cap.idleGPU = remainingIdle
+			if evictedIdx >= len(remainingTasks) {
+				cap.evictable = []*api.TaskInfo{}
+			} else {
+				cap.evictable = remainingTasks[evictedIdx:]
+			}
+			// recompute evictableGPU after removing evicted tasks
+			newEvictableGPU := int64(0)
+			for _, vt := range cap.evictable {
+				newEvictableGPU += int64(vt.Resreq.ScalarResources["nvidia.com/gpu"])
+			}
+			cap.evictableGPU = newEvictableGPU
+
+			pendingJobTopology[task.Name] = result
+			delete(pendingJob.Tasks, task.UID)
+			placed = true
+			break
+		}
+		if !placed {
+			// could not place this pending task with this victim job's nodes
+			continue
+		}
+	}
+	return pendingJobTopology
+}
+
+func preempteeJobOrder(ssn *framework.Session) func(l, r interface{}) bool {
+	return func(l, r interface{}) bool {
+		lJob := l.(*api.JobInfo)
+		rJob := r.(*api.JobInfo)
+
+		lvElasticResources := lJob.GetElasticGPUs()
+		rvElasticResources := rJob.GetElasticGPUs()
+
+		if lvElasticResources != rvElasticResources {
+			// this will be used as a LessThan function in building up the heap,
+			// so we need to return the opposite of the comparison to prioritize the job with more elastic replicas
+			return lvElasticResources > rvElasticResources
+		}
+
+		// when jobs have the same elastic replicas, we compare the queue priorities
+		lQueue := ssn.Queues[lJob.Queue]
+		rQueue := ssn.Queues[rJob.Queue]
+
+		if lQueue.Queue.Spec.Priority != rQueue.Queue.Spec.Priority {
+			return lQueue.Queue.Spec.Priority < rQueue.Queue.Spec.Priority
+		}
+
+		// when jobs have the same elastic replicas and queue priorities, we compare the queue overusage
+		lvOverusage := getQueueOverusage(lQueue)
+		rvOverusage := getQueueOverusage(rQueue)
+		if lvOverusage != rvOverusage {
+			// we want to prioritize the queue with more overusage
+			return lvOverusage > rvOverusage
+		}
+
+		// we compare the priorities of the jobs
+		if lJob.Priority != rJob.Priority {
+			return lJob.Priority < rJob.Priority
+		}
+
+		// compare the number of tasks in a job, and we prioritize the job with fewer tasks
+		lTasks := len(lJob.Tasks)
+		rTasks := len(rJob.Tasks)
+		if lTasks != rTasks {
+			return lTasks < rTasks
+		}
+
+		// lastly we compare the job creation timestamp
+		return lJob.CreationTimestamp.Before(&rJob.CreationTimestamp)
+	}
+}
+
+func getQueueOverusage(queue *api.QueueInfo) float64 {
+	allocatedGPUs := queue.GetAllocatedGPU()
+	deservedGPUs := queue.GetDeservedGPU()
+	overusage := float64(allocatedGPUs-deservedGPUs) / float64(deservedGPUs)
+	if overusage < 0 {
+		return 0
+	}
+	return overusage
+}
+
+func preemptorJobOrder(ssn *framework.Session) func(l, r interface{}) bool {
+	return func(l, r interface{}) bool {
+		lJob := l.(*api.JobInfo)
+		rJob := r.(*api.JobInfo)
+
+		lQueue := ssn.Queues[lJob.Queue]
+		rQueue := ssn.Queues[rJob.Queue]
+
+		if lQueue.Queue.Spec.Priority != rQueue.Queue.Spec.Priority {
+			return lQueue.Queue.Spec.Priority > rQueue.Queue.Spec.Priority
+		}
+
+		if lJob.Priority != rJob.Priority {
+			return lJob.Priority > rJob.Priority
+		}
+
+		// we need to prioritize the job that gets created later
+		// otherwise the new job will just keep evicting jobs but don't get the resource
+		return rJob.CreationTimestamp.Before(&lJob.CreationTimestamp)
+	}
 }

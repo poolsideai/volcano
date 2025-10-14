@@ -96,6 +96,9 @@ type Session struct {
 	RealNodesList             map[string][]*api.NodeInfo
 	HyperNodesReadyToSchedule bool
 
+	PreemptorJobOrderFn api.LessFn
+	PreempteeJobOrderFn api.LessFn
+
 	plugins             map[string]Plugin
 	eventHandlers       []*EventHandler
 	jobOrderFns         map[string]api.CompareFn

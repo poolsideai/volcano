@@ -463,7 +463,7 @@ func (ni *NodeInfo) RemoveTask(ti *TaskInfo) error {
 
 	task, found := ni.Tasks[key]
 	if !found {
-		klog.Warningf("failed to find task <%v/%v> on host <%v>",
+		klog.V(4).Infof("failed to find task <%v/%v> on host <%v>",
 			ti.Namespace, ti.Name, ni.Name)
 		return nil
 	}

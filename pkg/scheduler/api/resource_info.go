@@ -461,7 +461,7 @@ func (r *Resource) LessEqualWithDimension(rr *Resource, req *Resource) bool {
 	}
 
 	for name, quant := range req.ScalarResources {
-		if IsIgnoredScalarResource(name) {
+		if IgnoreScalarResource(name) {
 			continue
 		}
 		rQuant := r.ScalarResources[name]
@@ -494,6 +494,9 @@ func (r *Resource) LessEqualWithResourcesName(rr *Resource, defaultValue Dimensi
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			continue
@@ -530,6 +533,9 @@ func (r *Resource) LessPartly(rr *Resource, defaultValue DimensionDefaultValue) 
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			return true
@@ -566,6 +572,9 @@ func (r *Resource) LessEqualPartly(rr *Resource, defaultValue DimensionDefaultVa
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue, ok := rr.ScalarResources[resourceName]
 		if !ok && defaultValue == Infinity {
 			return true
@@ -591,6 +600,9 @@ func (r *Resource) Equal(rr *Resource, defaultValue DimensionDefaultValue) bool 
 	}
 
 	for resourceName, leftValue := range r.ScalarResources {
+		if IgnoreScalarResource(resourceName) {
+			continue
+		}
 		rightValue := rr.ScalarResources[resourceName]
 		if !equalFunc(leftValue, rightValue, minResource) {
 			return false
@@ -789,4 +801,8 @@ func ExceededPart(left, right *Resource) *Resource {
 
 	diff, _ := left.Diff(right, Zero)
 	return diff
+}
+
+func IgnoreScalarResource(name v1.ResourceName) bool {
+	return name == "attachable-volumes-csi-fsx.csi.aws.com" || name == "efa.poolsi.de/infiniband" || name == "vpc.amazonaws.com/efa" || ignoredScalarResources.Has(string(name))
 }

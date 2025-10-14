@@ -50,6 +50,21 @@ type operation struct {
 	reason string
 }
 
+func (o *operation) String() string {
+	opName := func(o Operation) string {
+		switch o {
+		case Evict:
+			return "Evict"
+		case Pipeline:
+			return "Pipeline"
+		case Allocate:
+			return "Allocate"
+		}
+		return "Unknown"
+	}
+	return fmt.Sprintf("operation: %s, task: %s/%s, reason: %s", opName(o.name), o.task.Job, o.task.Name, o.reason)
+}
+
 // Statement structure
 type Statement struct {
 	operations []operation
@@ -234,7 +249,7 @@ func (s *Statement) UnPipeline(task *api.TaskInfo) error {
 			klog.Errorf("Failed to remove task <%v/%v> to node <%v> when unpipeline in Session <%v>: %v",
 				task.Namespace, task.Name, task.NodeName, s.ssn.UID, err)
 		}
-		klog.V(3).Infof("After unpipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+		klog.V(4).Infof("After unpipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
 			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
 	} else {
 		klog.Errorf("Failed to find Node <%s> in Session <%s> index when unpipeline.",
@@ -316,7 +331,7 @@ func (s *Statement) Allocate(task *api.TaskInfo, nodeInfo *api.NodeInfo) (err er
 			task.Namespace, task.Name, hostname, len(errInfos))
 	} else {
 		// Update status in session
-		klog.V(3).Info("Allocating operations ...")
+		klog.V(4).Info("Allocating operations ...")
 		s.operations = append(s.operations, operation{
 			name: Allocate,
 			task: task,
@@ -390,7 +405,7 @@ func (s *Statement) unallocate(task *api.TaskInfo) error {
 
 // Discard operation for evict, pipeline and allocate
 func (s *Statement) Discard() {
-	klog.V(3).Info("Discarding operations ...")
+	klog.V(4).Info("Discarding operations ...")
 	for i := len(s.operations) - 1; i >= 0; i-- {
 		op := s.operations[i]
 		op.task.GenerateLastTxContext()
@@ -416,7 +431,7 @@ func (s *Statement) Discard() {
 
 // Commit operation for evict and pipeline
 func (s *Statement) Commit() {
-	klog.V(3).Info("Committing operations ...")
+	klog.V(4).Info("Committing operations ...")
 	for _, op := range s.operations {
 		op.task.ClearLastTxContext()
 		switch op.name {

@@ -906,9 +906,9 @@ func (sc *SchedulerCache) Bind(ctx context.Context, bindContexts []*BindContext)
 	tmp := time.Now()
 	errMsg := sc.Binder.Bind(sc.kubeClient, readyToBindTasks)
 	if len(errMsg) == 0 {
-		klog.V(3).Infof("bind ok, latency %v", time.Since(tmp))
+		klog.V(4).Infof("bind ok, latency %v", time.Since(tmp))
 	} else {
-		klog.V(3).Infof("There are %d tasks in total and %d binds failed, latency %v", len(readyToBindTasks), len(errMsg), time.Since(tmp))
+		klog.V(4).Infof("There are %d tasks in total and %d binds failed, latency %v", len(readyToBindTasks), len(errMsg), time.Since(tmp))
 	}
 
 	for _, bindContext := range bindContexts {
@@ -1017,13 +1017,13 @@ func (sc *SchedulerCache) taskUnschedulable(task *schedulingapi.TaskInfo, reason
 		pod = pod.DeepCopy()
 
 		if updateCond && podutil.UpdatePodCondition(&pod.Status, condition) {
-			klog.V(3).Infof("Updating pod condition for %s/%s to (%s==%s)", pod.Namespace, pod.Name, condition.Type, condition.Status)
+			klog.V(4).Infof("Updating pod condition for %s/%s to (%s==%s)", pod.Namespace, pod.Name, condition.Type, condition.Status)
 		}
 
 		// if nominatedNode field changed, we should update it to the pod status, for k8s
 		// autoscaler will check this field and ignore this pod when scale up.
 		if updateNomiNode {
-			klog.V(3).Infof("Updating pod nominatedNodeName for %s/%s from (%s) to (%s)", pod.Namespace, pod.Name, pod.Status.NominatedNodeName, nominatedNodeName)
+			klog.V(4).Infof("Updating pod nominatedNodeName for %s/%s from (%s) to (%s)", pod.Namespace, pod.Name, pod.Status.NominatedNodeName, nominatedNodeName)
 			pod.Status.NominatedNodeName = nominatedNodeName
 		}
 
@@ -1048,7 +1048,7 @@ func (sc *SchedulerCache) deleteJob(job *schedulingapi.JobInfo) {
 }
 
 func (sc *SchedulerCache) retryDeleteJob(job *schedulingapi.JobInfo) {
-	klog.V(3).Infof("Retry to delete Job <%v:%v/%v>", job.UID, job.Namespace, job.Name)
+	klog.V(4).Infof("Retry to delete Job <%v:%v/%v>", job.UID, job.Namespace, job.Name)
 
 	sc.DeletedJobs.AddRateLimited(job)
 }

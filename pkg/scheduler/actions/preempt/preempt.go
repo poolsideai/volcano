@@ -171,12 +171,13 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 
 				// If not preemptor tasks, next job.
 				if preemptorTasks[preemptorJob.UID].Empty() {
-					klog.V(3).Infof("No preemptor task in job <%s/%s>.",
+					klog.V(4).Infof("No preemptor task in job <%s/%s>.",
 						preemptorJob.Namespace, preemptorJob.Name)
 					break
 				}
 
 				preemptor := preemptorTasks[preemptorJob.UID].Pop().(*api.TaskInfo)
+				klog.V(3).Infof("Preemptor task <%s/%s/%s>", preemptorJob.Queue, preemptorJob.Name, preemptor.Name)
 
 				assigned, err = pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
 					// Ignore non running task.
@@ -204,6 +205,9 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 
 			// Commit changes only if job is pipelined, otherwise try next job.
 			if ssn.JobPipelined(preemptorJob) {
+				for _, op := range stmt.Operations() {
+					klog.V(3).Infof("[poolside] Preemptor <%s/%s> committed operation: %s", preemptorJob.Queue, preemptorJob.Name, op.String())
+				}
 				stmt.Commit()
 			} else {
 				stmt.Discard()
@@ -216,56 +220,56 @@ func (pmpt *Action) Execute(ssn *framework.Session) {
 		}
 
 		// Preemption between Task within Job.
-		for _, job := range underRequest {
-			// Fix: preemptor numbers lose when in same job
-			preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
-			for _, task := range job.TaskStatusIndex[api.Pending] {
-				// Again, skip scheduling gated tasks
-				if task.SchGated {
-					continue
-				}
-				preemptorTasks[job.UID].Push(task)
-			}
-			for {
-				if _, found := preemptorTasks[job.UID]; !found {
-					break
-				}
+		// for _, job := range underRequest {
+		// 	// Fix: preemptor numbers lose when in same job
+		// 	preemptorTasks[job.UID] = util.NewPriorityQueue(ssn.TaskOrderFn)
+		// 	for _, task := range job.TaskStatusIndex[api.Pending] {
+		// 		// Again, skip scheduling gated tasks
+		// 		if task.SchGated {
+		// 			continue
+		// 		}
+		// 		preemptorTasks[job.UID].Push(task)
+		// 	}
+		// 	for {
+		// 		if _, found := preemptorTasks[job.UID]; !found {
+		// 			break
+		// 		}
 
-				if preemptorTasks[job.UID].Empty() {
-					break
-				}
+		// 		if preemptorTasks[job.UID].Empty() {
+		// 			break
+		// 		}
 
-				preemptor := preemptorTasks[job.UID].Pop().(*api.TaskInfo)
+		// 		preemptor := preemptorTasks[job.UID].Pop().(*api.TaskInfo)
 
-				stmt := framework.NewStatement(ssn)
-				assigned, err := pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
-					// Ignore non running task.
-					if !api.PreemptableStatus(task.Status) {
-						return false
-					}
-					// BestEffort pod is not supported to preempt unBestEffort pod.
-					if preemptor.BestEffort && !task.BestEffort {
-						return false
-					}
-					// should skip not preemptable pod
-					if !task.Preemptable {
-						return false
-					}
+		// 		stmt := framework.NewStatement(ssn)
+		// 		assigned, err := pmpt.preempt(ssn, stmt, preemptor, func(task *api.TaskInfo) bool {
+		// 			// Ignore non running task.
+		// 			if !api.PreemptableStatus(task.Status) {
+		// 				return false
+		// 			}
+		// 			// BestEffort pod is not supported to preempt unBestEffort pod.
+		// 			if preemptor.BestEffort && !task.BestEffort {
+		// 				return false
+		// 			}
+		// 			// should skip not preemptable pod
+		// 			if !task.Preemptable {
+		// 				return false
+		// 			}
 
-					// Preempt tasks within job.
-					return preemptor.Job == task.Job
-				}, ph)
-				if err != nil {
-					klog.V(3).Infof("Preemptor <%s/%s> failed to preempt Task , err: %s", preemptor.Namespace, preemptor.Name, err)
-				}
-				stmt.Commit()
+		// 			// Preempt tasks within job.
+		// 			return preemptor.Job == task.Job
+		// 		}, ph)
+		// 		if err != nil {
+		// 			klog.V(3).Infof("Preemptor <%s/%s> failed to preempt Task , err: %s", preemptor.Namespace, preemptor.Name, err)
+		// 		}
+		// 		stmt.Commit()
 
-				// If no preemption, next job.
-				if !assigned {
-					break
-				}
-			}
-		}
+		// 		// If no preemption, next job.
+		// 		if !assigned {
+		// 			break
+		// 		}
+		// 	}
+		// }
 	}
 }
 
@@ -319,7 +323,7 @@ func (pmpt *Action) normalPreempt(
 	assigned := false
 
 	for _, node := range selectedNodes {
-		klog.V(3).Infof("Considering Task <%s/%s> on Node <%s>.",
+		klog.V(4).Infof("Considering Task <%s/%s> on Node <%s>.",
 			preemptor.Namespace, preemptor.Name, node.Name)
 
 		var preemptees []*api.TaskInfo
@@ -334,7 +338,7 @@ func (pmpt *Action) normalPreempt(
 		metrics.UpdatePreemptionVictimsCount(len(victims))
 
 		if err := util.ValidateVictims(preemptor, node, victims); err != nil {
-			klog.V(3).Infof("No validated victims on Node <%s>: %v", node.Name, err)
+			klog.V(4).Infof("No validated victims on Node <%s>: %v", node.Name, err)
 			continue
 		}
 
@@ -357,9 +361,13 @@ func (pmpt *Action) normalPreempt(
 				break
 			}
 			preemptee := victimsQueue.Pop().(*api.TaskInfo)
-			klog.V(3).Infof("Try to preempt Task <%s/%s> for Task <%s/%s>",
-				preemptee.Namespace, preemptee.Name, preemptor.Namespace, preemptor.Name)
-			if err := stmt.Evict(preemptee, "preempt"); err != nil {
+			preempteeQueue := preemptee.Namespace
+			preempteeJob := ssn.Jobs[preemptee.Job]
+			if preempteeJob != nil && preempteeJob.Queue != "" {
+				preempteeQueue = string(preempteeJob.Queue)
+			}
+			klog.V(3).Infof("Try to preempt Task <%s/%s> for Task <%s/%s>", preempteeQueue, preemptee.Name, currentQueue.Name, preemptor.Name)
+			if err := stmt.Evict(preemptee, fmt.Sprintf("preempt for task <%s/%s>", currentQueue.Name, preemptor.Name)); err != nil {
 				klog.Errorf("Failed to preempt Task <%s/%s> for Task <%s/%s>: %v",
 					preemptee.Namespace, preemptee.Name, preemptor.Namespace, preemptor.Name, err)
 				continue
@@ -411,7 +419,7 @@ func (pmpt *Action) taskEligibleToPreempt(preemptor *api.TaskInfo) error {
 
 		err := pmpt.ssn.PredicateFn(preemptor, nodeInfo)
 		if err == nil {
-			return fmt.Errorf("not eligible due to the pod's nominated node is already schedulable, which should not happen as preemption means no node is schedulable")
+			return fmt.Errorf("not eligible due to the pod's nominated node is already schedulable, which should not happen as preemption means no node is schedulable. %v", err)
 		}
 
 		fitError, ok := err.(*api.FitError)
@@ -720,7 +728,7 @@ func SelectVictimsOnNode(
 	metrics.UpdatePreemptionVictimsCount(len(allVictims))
 
 	if err := util.ValidateVictims(preemptor, nodeInfo, allVictims); err != nil {
-		klog.V(3).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
+		klog.V(4).Infof("No validated victims on Node <%s>: %v", nodeInfo.Name, err)
 		return nil, api.AsStatus(fmt.Errorf("no validated victims on Node <%s>: %v", nodeInfo.Name, err))
 	}
 
