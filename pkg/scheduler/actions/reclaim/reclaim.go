@@ -93,18 +93,18 @@ func (ra *Action) Execute(ssn *framework.Session) {
 			continue
 		}
 
-		for _, task := range pendingJobTopology {
+		for pendingTaskName, task := range pendingJobTopology {
 			for _, t := range task.TasksToEvict {
-				err := ssn.Evict(t, "reclaim for job "+string(pendingJob.Queue)+"/"+pendingJob.Name)
+				err := ssn.Evict(t, fmt.Sprintf("reclaim for task <%s/%s>", string(pendingJob.Queue), pendingTaskName))
 				if err != nil {
-					klog.Errorf("Failed to evict task <%s/%s> for job <%s/%s>: %v",
-						t.Namespace, t.Name, pendingJob.Namespace, pendingJob.Name, err)
+					klog.Errorf("Failed to evict task <%s/%s> for task <%s/%s>: %v",
+						t.Namespace, t.Name, pendingJob.Namespace, pendingTaskName, err)
 				}
 			}
 			// we still try to pipeline the task even if it fails to evict
 			// because it might be a victim of a gang job
 			if err := ssn.Pipeline(task.PendingTask, task.NodeName); err != nil {
-				klog.Errorf("Failed to pipeline job <%s/%s>: %v", pendingJob.Namespace, pendingJob.Name, err)
+				klog.Errorf("Failed to pipeline task <%s/%s>: %v", pendingJob.Namespace, pendingTaskName, err)
 			}
 		}
 	}
